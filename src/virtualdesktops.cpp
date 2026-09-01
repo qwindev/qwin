@@ -67,6 +67,16 @@ VirtualDesktops::VirtualDesktops(QObject *parent)
                              << "focus will stay on the desktop being left";
     }
 
+    // Optional, and not folded into the mandatory-export check above: the
+    // tiler degrades to one shared tree per monitor without it, rather than
+    // losing desktop switching (or this whole class) altogether.
+    m_getWindowDesktopIdRaw = reinterpret_cast<void *>(m_dll.resolve("GetWindowDesktopId"));
+    if (!m_getWindowDesktopIdRaw) {
+        qWarning().noquote() << "Desktops:" << dllPath
+                             << "has no GetWindowDesktopId export -"
+                             << "the tiler falls back to one shared tree per monitor";
+    }
+
     // The DLL's listener posts switch notifications here. The window lives on
     // the main thread, so Qt's loop dispatches them and listenerProc runs
     // there too - no marshalling needed.
@@ -118,6 +128,25 @@ void VirtualDesktops::refresh()
                                  .arg(count).arg(index);
         emit changed();
     }
+}
+
+QUuid VirtualDesktops::windowDesktopId(void *hwnd) const
+{
+    if (!m_getWindowDesktopIdRaw)
+        return QUuid();
+    // GUID is 16 bytes, so the Microsoft x64 ABI returns it through a hidden
+    // pointer the caller allocates; the DLL's extern "C" export follows the
+    // same platform calling convention, so declaring the pointer with GUID
+    // as an ordinary by-value return type is enough - the compiler emits the
+    // hidden-pointer call on both sides without any manual marshalling here.
+    using GetWindowDesktopIdFn = GUID(*)(HWND);
+    const auto getWindowDesktopId = reinterpret_cast<GetWindowDesktopIdFn>(m_getWindowDesktopIdRaw);
+    // A zeroed GUID comes back both for a window pinned to all desktops and
+    // for a query the DLL could not satisfy (an elevated/protected window, a
+    // COM hiccup) - the export gives no way to tell those apart, so this
+    // stays QUuid() either way and callers decide what "unknown" means to
+    // them (see windowDesktopId's declaration comment in the header).
+    return QUuid(getWindowDesktopId(static_cast<HWND>(hwnd)));
 }
 
 // Unlike the shell's own Win+Ctrl+Arrow, the DLL's switch leaves the OLD

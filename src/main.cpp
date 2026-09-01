@@ -29,6 +29,8 @@
 #include "pluginregistry.h"
 #include "wifiapi.h"
 
+#include <windows.h>
+
 // Drawn at runtime so there is no resource file.
 static QIcon makeTrayIcon()
 {
@@ -85,6 +87,21 @@ static void seedBundledPlugins(const QString &pluginsDir)
 
 int main(int argc, char *argv[])
 {
+    // The app quits only from the tray (quitOnLastWindowClosed is false
+    // below), so a double launch - a stray shortcut, double-clicking the
+    // exe again - is a real path to two instances fighting over the same
+    // hotkeys, tray icon and hooks. A named mutex, held for the process
+    // lifetime, is the standard way to detect that before doing any work.
+    HANDLE instanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\qwin-single-instance");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        qWarning() << "qwin: already running, exiting";
+        return 0;
+    }
+    // Leaked deliberately: the OS closes the handle, releasing the mutex,
+    // when this process exits - there is no earlier point at which closing
+    // it ourselves would be correct.
+    Q_UNUSED(instanceMutex);
+
     QApplication app(argc, argv); // QApplication (not QGuiApplication): QSystemTrayIcon needs Widgets
     QCoreApplication::setApplicationName(QStringLiteral("qwin"));
     QCoreApplication::setApplicationVersion(QStringLiteral(QWIN_VERSION_STR));
@@ -146,9 +163,13 @@ int main(int argc, char *argv[])
     registerQmlTypes();
 
     // Wired here rather than inside tilingapi.cpp: the tiler keys its layouts
-    // by virtual desktop, but has to keep working on a machine whose
-    // VirtualDesktopAccessor.dll is missing.
-    tiling.setDesktopIndexProvider([&desktops] { return desktops.currentIndex(); });
+    // by each window's own virtual desktop, but has to keep working on a
+    // machine whose VirtualDesktopAccessor.dll is missing, or missing just
+    // this export - leaving the provider unset is how it finds out.
+    if (desktops.supportsWindowDesktopId()) {
+        tiling.setDesktopGuidProvider(
+            [&desktops](void *hwnd) { return desktops.windowDesktopId(hwnd); });
+    }
     QObject::connect(&desktops, &VirtualDesktops::changed, &tiling, &TilingApi::rescan);
 
     // The manager rebuilds the engine on shared/ reloads; each rebuild must

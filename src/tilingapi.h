@@ -7,10 +7,13 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QUuid>
 
 #include <functional>
 
 #include "layouttree.h"
+
+class QScreen;
 
 // The `Tiler` QML singleton: a dwindle tiling window manager over the
 // desktop's own windows. One layout::Tree per (monitor, virtual desktop);
@@ -77,15 +80,24 @@ public:
     QStringList floatProcesses() const { return m_floatProcesses; }
     void setFloatProcesses(const QStringList &names);
 
-    int managedCount() const { return m_managed.size(); }
+    // Windows on screen right now, not the total under management: one
+    // parked on another desktop stays in m_managed (a cloaked survivor - see
+    // isCloakedAlive in the .cpp) so the layout survives the round trip, but
+    // the bar's tiling indicator means "how many tiles am I looking at".
+    int managedCount() const;
 
     bool debug() const { return m_debug; }
     void setDebug(bool debug);
 
     // Virtual desktops are a separate unit; main.cpp injects the accessor so
-    // this one keeps compiling on its own. Absent, everything lands on one
-    // desktop - which is what a machine without the DLL has anyway.
-    void setDesktopIndexProvider(std::function<int()> provider);
+    // this one keeps compiling on its own. The callback returns the window's
+    // own desktop as a GUID, or a null QUuid when that is unknown - pinned
+    // to all desktops, or a transient query failure; the two cannot be told
+    // apart from this alone, so callers decide per call site what "unknown"
+    // should mean. Leaving the provider unset entirely - no
+    // VirtualDesktopAccessor.dll, or an older one missing GetWindowDesktopId
+    // - falls back to one shared tree per monitor.
+    void setDesktopGuidProvider(std::function<QUuid(void *)> provider);
 
     // "left" | "right" | "up" | "down", case-insensitive.
     Q_INVOKABLE void focusDirection(const QString &direction);
@@ -135,10 +147,17 @@ private:
         int rejections = 0;
     };
 
-    // "\\.\DISPLAY1|0" - monitor device name and virtual desktop index.
+    // "\\.\DISPLAY1|{guid}" - monitor device name and the window's own
+    // virtual desktop (or "0" as a constant stand-in when the GUID provider
+    // is unset). Empty when the window cannot be placed right now: its
+    // monitor is gone, or its desktop is unknown (see setDesktopGuidProvider).
     QString treeKey(void *hwnd) const;
     layout::Tree *treeFor(const QString &key);
     void pruneEmptyTrees();
+    // True if `id`, currently seated in the tree keyed `key`, still belongs
+    // on that tree's desktop. The GUID-vs-cloak decision lives in the .cpp,
+    // next to isCloakedAlive.
+    bool windowStillOnTreeDesktop(quintptr id, const QString &key) const;
 
     // Work area in physical pixels - rcWork, so the AppBar registration in
     // panelwindow.cpp has already carved our own panels out of it - plus the
@@ -153,6 +172,12 @@ private:
     void releaseWindow(quintptr id, bool restoreGeometry);
     void scheduleScan();
     void sweep(); // safety timer: adopt latecomers, re-assert drifted rects
+    // Debounced screenAdded/Removed + per-screen geometry/availableGeometry
+    // watcher: a resolution, DPI or work-area change must recompute the
+    // trees' metrics promptly, or the sweep's drift-fixer spends its time
+    // re-applying rects derived from the stale area instead. See the ctor.
+    void watchScreen(QScreen *screen);
+    void scheduleDisplayRecheck();
     // Focused window plus the tree holding it, with that tree's boxes
     // refreshed - every navigation command needs exactly this.
     // `metrics` and `scale`, when asked for, describe the monitor that tree
@@ -183,15 +208,25 @@ private:
     // GetForegroundWindow() at adoption time is already the new window.
     quintptr m_lastFocused = 0;
     quintptr m_dragging = 0; // between MOVESIZESTART and MOVESIZEEND
+    // managedCount() as of the last layoutChanged emission. A pure desktop
+    // switch changes which managed windows are cloaked without touching tree
+    // membership, so rescan() has to diff the visible count against what the
+    // bar last saw - not against a value read earlier in the same pass,
+    // which could never differ. -1 so the first rescan always emits.
+    int m_lastVisibleCount = -1;
     bool m_applying = false; // our own SetWindowPos in flight
     bool m_debug = false;
 
-    std::function<int()> m_desktopIndex;
+    std::function<QUuid(void *)> m_desktopGuid;
 
     QTimer m_scanTimer; // coalesces a burst of window events
     QTimer m_settleTimer; // fast re-check for a window that is not ready yet
     int m_settleTries = 0;
     QTimer m_sweepTimer;
+    // Debounced (not throttled - restarted on every event) so a monitor
+    // reconfiguration's burst of screen signals coalesces into one
+    // rescan+retile instead of several.
+    QTimer m_displayTimer;
 
     void *m_hookObject = nullptr;   // DESTROY..HIDE
     void *m_hookCloak = nullptr;    // CLOAKED..UNCLOAKED

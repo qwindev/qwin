@@ -3,6 +3,7 @@
 #include <QLibrary>
 #include <QObject>
 #include <QTimer>
+#include <QUuid>
 
 // The `Desktops` QML singleton. Windows has no public virtual-desktop API,
 // so everything goes through VirtualDesktopAccessor.dll
@@ -34,6 +35,18 @@ public:
     // foreground window is still the one the user was in.
     Q_INVOKABLE void moveForegroundWindowToNewDesktop();
 
+    // The window's own virtual desktop - not "whichever is current" - so the
+    // tiler (a separate unit) can key its layouts by the window's real
+    // desktop instead of a shifting index. Null when unresolvable: the
+    // window is pinned to all desktops, or the query failed transiently -
+    // GetWindowDesktopId (below) cannot tell those apart, so callers must
+    // treat a null result conservatively rather than as "no desktop".
+    QUuid windowDesktopId(void *hwnd) const;
+    // False without VirtualDesktopAccessor.dll, or with an older build that
+    // lacks the GetWindowDesktopId export; windowDesktopId() then always
+    // returns null and callers should not bother asking.
+    bool supportsWindowDesktopId() const { return m_getWindowDesktopIdRaw != nullptr; }
+
 signals:
     void changed();
 
@@ -63,4 +76,10 @@ private:
     // Optional: an older DLL without it keeps the old (wrong) focus behaviour
     // rather than losing switching altogether.
     int (*m_isWindowOnCurrentDesktop)(void *) = nullptr; // (HWND)
+    // Optional, resolved but left untyped here: GetWindowDesktopId returns a
+    // GUID by value (16 bytes, so the x64 ABI passes it back through a
+    // hidden pointer), and pulling that type in would need windows.h in this
+    // header. Cast to the real signature only in the .cpp, where windows.h
+    // is already included.
+    void *m_getWindowDesktopIdRaw = nullptr; // (HWND) -> GUID
 };

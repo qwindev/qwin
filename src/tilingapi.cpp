@@ -16,6 +16,9 @@ namespace {
 
 constexpr int kScanDebounceMs = 150;
 constexpr int kSweepMs = 2000;
+// Coalesces a burst of QScreen signals from one monitor reconfiguration into
+// a single rescan+retile.
+constexpr int kDisplayDebounceMs = 300;
 // A window that showed but is not tileable yet gets re-checked this often,
 // this many times, before it is left to the sweep. Tuned to be shorter than
 // a frame or two of the window sitting in the wrong place.
@@ -156,11 +159,15 @@ bool looksLikeCandidate(HWND hwnd)
 
 // Alive but composited away: a window parked on another virtual desktop, or
 // one the switch animation has not uncloaked yet. isFocusableAppWindow
-// rejects these, so a rescan sees them as "gone" - but their tree seats must
-// survive the round trip, or every desktop switch would rebuild that
-// desktop's layout in Z-order (most-recently-used first) and shuffle the
-// tiles. Minimized is excluded: minimizing removes a window from the layout
-// whether or not its desktop is the active one.
+// rejects these, so a rescan sees them as "gone". With a real per-window
+// desktop GUID available, windowStillOnTreeDesktop() answers the "did it
+// really leave" question directly instead - this is now only the fallback
+// for the two cases that cannot: no GetWindowDesktopId at all (no DLL, or an
+// older one), and a single window's transient GUID query failure, where
+// guessing "evicted" would drop a window's tree seat over a COM hiccup.
+// Minimized is excluded: minimizing removes a window from the layout whether
+// or not its desktop is the active one, and a minimized window's desktop
+// GUID does not change to say so.
 bool isCloakedAlive(HWND hwnd)
 {
     if (!IsWindow(hwnd) || IsIconic(hwnd))
@@ -221,6 +228,31 @@ TilingApi::TilingApi(QObject *parent)
     m_sweepTimer.setInterval(kSweepMs);
     connect(&m_sweepTimer, &QTimer::timeout, this, &TilingApi::sweep);
 
+    m_displayTimer.setSingleShot(true);
+    m_displayTimer.setInterval(kDisplayDebounceMs);
+    connect(&m_displayTimer, &QTimer::timeout, this, [this] {
+        rescan(); // a monitor may have gone, or a window may now be on a
+                   // different one - both change tree membership
+        retile(); // unconditional: a resolution/DPI/work-area change alone
+                   // leaves membership untouched, but rescan() only retiles
+                   // when membership or the visible count changed
+    });
+
+    // The 2 s sweep's drift-fixer re-applies `assigned` rects computed from
+    // the last arrange() - after a resolution, DPI or work-area change those
+    // rects describe the OLD area, so the sweep actively pushes windows back
+    // onto stale geometry until some unrelated window event forces a retile.
+    // Watching QScreen directly is what recomputes metrics promptly instead.
+    for (QScreen *screen : QGuiApplication::screens())
+        watchScreen(screen);
+    connect(qGuiApp, &QGuiApplication::screenAdded, this, [this](QScreen *screen) {
+        watchScreen(screen);
+        scheduleDisplayRecheck();
+    });
+    connect(qGuiApp, &QGuiApplication::screenRemoved, this, [this](QScreen *) {
+        scheduleDisplayRecheck();
+    });
+
     // Adjacent event ids, so one hook covers each pair or run.
     m_hookObject = SetWinEventHook(EVENT_OBJECT_DESTROY, EVENT_OBJECT_HIDE,
                                     nullptr, winEventProc, 0, 0,
@@ -257,9 +289,9 @@ TilingApi::~TilingApi()
     g_instance = nullptr;
 }
 
-void TilingApi::setDesktopIndexProvider(std::function<int()> provider)
+void TilingApi::setDesktopGuidProvider(std::function<QUuid(void *)> provider)
 {
-    m_desktopIndex = std::move(provider);
+    m_desktopGuid = std::move(provider);
 }
 
 void TilingApi::setEnabled(bool enabled)
@@ -279,6 +311,7 @@ void TilingApi::setEnabled(bool enabled)
         m_sweepTimer.stop();
         m_scanTimer.stop();
         m_settleTimer.stop();
+        m_displayTimer.stop();
         const QList<quintptr> ids = m_managed.keys();
         for (quintptr id : ids)
             releaseWindow(id, true);
@@ -286,6 +319,7 @@ void TilingApi::setEnabled(bool enabled)
         m_trees.clear();
         m_managed.clear();
         m_overflow.clear();
+        m_lastVisibleCount = 0; // nothing tiled; keep the diff below honest
     }
     emit enabledChanged();
     emit layoutChanged();
@@ -375,6 +409,19 @@ void TilingApi::setFloatProcesses(const QStringList &names)
     rescan(); // drops anything the new rules exclude
 }
 
+int TilingApi::managedCount() const
+{
+    // m_managed also holds cloaked survivors parked on another desktop (see
+    // isCloakedAlive) so their tree seats outlive a switch; the bar's
+    // indicator means tiles on screen right now, so those do not count.
+    int count = 0;
+    for (auto it = m_managed.constBegin(); it != m_managed.constEnd(); ++it) {
+        if (!isCloakedAlive(toHwnd(it.key())))
+            ++count;
+    }
+    return count;
+}
+
 // ---------------------------------------------------------------- discovery
 
 void TilingApi::scheduleScan()
@@ -384,6 +431,25 @@ void TilingApi::scheduleScan()
     // never fire.
     if (m_enabled && !m_scanTimer.isActive())
         m_scanTimer.start();
+}
+
+void TilingApi::watchScreen(QScreen *screen)
+{
+    if (!screen)
+        return;
+    connect(screen, &QScreen::geometryChanged, this, [this] { scheduleDisplayRecheck(); });
+    connect(screen, &QScreen::availableGeometryChanged, this, [this] { scheduleDisplayRecheck(); });
+    // A scale change alone: the physical work area is the same, but every
+    // gap and minimum is scaled from logical px, so the metrics still moved.
+    connect(screen, &QScreen::logicalDotsPerInchChanged, this, [this](qreal) { scheduleDisplayRecheck(); });
+}
+
+void TilingApi::scheduleDisplayRecheck()
+{
+    // Restarted rather than started-if-idle: a monitor reconfiguration fires
+    // geometryChanged/availableGeometryChanged in bursts, and this is what
+    // coalesces a burst into one rescan+retile instead of several.
+    m_displayTimer.start();
 }
 
 void TilingApi::onWindowSetChanged()
@@ -483,8 +549,48 @@ QString TilingApi::treeKey(void *hwnd) const
     mi.cbSize = sizeof(mi);
     if (!GetMonitorInfoW(MonitorFromWindow(static_cast<HWND>(hwnd), MONITOR_DEFAULTTONEAREST), &mi))
         return QString();
-    const int desktop = m_desktopIndex ? m_desktopIndex() : 0;
-    return QString::fromWCharArray(mi.szDevice) + QLatin1Char('|') + QString::number(desktop);
+
+    // The suffix is the window's OWN desktop, not "whichever is current":
+    // keying off the current index misattributes every tree once a desktop
+    // in the middle is removed and the later ones shift down. Without
+    // GetWindowDesktopId (no DLL, or an older one), there is no way to tell
+    // desktops apart per window, so fall back to one shared tree per
+    // monitor - eviction then leans entirely on isCloakedAlive, same as
+    // before this existed.
+    if (!m_desktopGuid)
+        return QString::fromWCharArray(mi.szDevice) + QLatin1String("|0");
+
+    const QUuid desktop = m_desktopGuid(hwnd);
+    if (desktop.isNull())
+        // Pinned to all desktops, or the query failed - either way we do not
+        // know where this window belongs, so leave it exactly where a
+        // non-tileable window would land: out of `wanted` entirely, and
+        // never adopted.
+        return QString();
+
+    return QString::fromWCharArray(mi.szDevice) + QLatin1Char('|')
+         + desktop.toString(QUuid::WithoutBraces);
+}
+
+// A window in the tree keyed `key` that no longer showed up under that key
+// in this rescan's `wanted` map either really left (closed, minimized,
+// floated, moved to another monitor or desktop) or is merely cloaked while
+// still parked here (a Task View drag animation, a UWP host gone dormant) -
+// this is the call that tells those apart.
+bool TilingApi::windowStillOnTreeDesktop(quintptr id, const QString &key) const
+{
+    HWND hwnd = toHwnd(id);
+    if (!IsWindow(hwnd) || IsIconic(hwnd))
+        return false; // gone, or minimized - minimizing evicts regardless of desktop
+
+    if (!m_desktopGuid)
+        return isCloakedAlive(hwnd); // no per-window GUID: one shared tree per monitor
+
+    const QUuid guid = m_desktopGuid(hwnd);
+    if (guid.isNull())
+        return isCloakedAlive(hwnd); // pinned, or the query failed - do not evict on a guess
+
+    return key.section(QLatin1Char('|'), 1, 1) == guid.toString(QUuid::WithoutBraces);
 }
 
 layout::Tree *TilingApi::treeFor(const QString &key)
@@ -540,28 +646,37 @@ void TilingApi::rescan()
     // arranged differently from one run to the next. EnumWindows walks the
     // Z-order top-first, which is the closest thing to most-recently-used.
     QHash<QString, QVector<quintptr>> wanted;
+    // Passed isTileable but treeKey() came back empty this pass: a window
+    // pinned to all desktops, or a transient GetWindowDesktopId failure.
+    // Neither failed tileability, only "which desktop" - so the eviction
+    // loop below must not read a member of this set as "it left", the way it
+    // would a window that stopped being tileable outright.
+    QSet<quintptr> keyUnknown;
     for (HWND hwnd : windows) {
         if (!isTileable(hwnd))
             continue;
         const QString key = treeKey(hwnd);
-        if (!key.isEmpty())
+        if (key.isEmpty())
+            keyUnknown.insert(toId(hwnd));
+        else
             wanted[key].append(toId(hwnd));
     }
 
     bool changed = false;
 
     // Drop what left: closed, minimized, floated, or moved to another
-    // monitor or desktop. A cloaked survivor stays put - see isCloakedAlive;
-    // it cannot be in `wanted` under any key, so this is the one test between
-    // it and eviction. No geometry restore here - a window that only
-    // changed monitors is re-adopted below, and restoring it first would
-    // just be a visible flash before the new tile lands.
+    // monitor or desktop. windowStillOnTreeDesktop() is what tells that
+    // apart from a window merely cloaked while still parked here - a Task
+    // View drag animation, a UWP host gone dormant, or a switch away from
+    // this desktop's own windows. No geometry restore here - a window that
+    // only changed monitors is re-adopted below, and restoring it first
+    // would just be a visible flash before the new tile lands.
     for (auto it = m_trees.constBegin(); it != m_trees.constEnd(); ++it) {
         const QVector<quintptr> keep = wanted.value(it.key());
         for (quintptr id : it.value()->ids()) {
-            if (keep.contains(id))
+            if (keep.contains(id) || keyUnknown.contains(id))
                 continue;
-            if (isCloakedAlive(toHwnd(id)))
+            if (windowStillOnTreeDesktop(id, it.key()))
                 continue;
             it.value()->remove(id);
             m_managed.remove(id);
@@ -636,8 +751,19 @@ void TilingApi::rescan()
     }
 
     pruneEmptyTrees();
-    if (changed)
-        retile();
+    if (changed) {
+        retile(); // also emits layoutChanged and refreshes m_lastVisibleCount
+    } else if (const int visible = managedCount(); visible != m_lastVisibleCount) {
+        // A pure desktop switch: nothing adopted or evicted, but which of
+        // the still-managed windows are on screen changed - which is what
+        // the bar's indicator means. The cloak flips happen between rescans,
+        // so the count must be compared against the last one *emitted* - two
+        // reads inside one rescan always agree, since nothing here changes a
+        // window's cloak state. No geometry changed either, so retile()
+        // would be wasted work; the count itself is the whole story.
+        m_lastVisibleCount = visible;
+        emit layoutChanged();
+    }
 }
 
 void TilingApi::sweep()
@@ -764,6 +890,7 @@ void TilingApi::retile()
         }
     }
     applyPlacements(all);
+    m_lastVisibleCount = managedCount(); // rescan() diffs against this
     emit layoutChanged();
 }
 
