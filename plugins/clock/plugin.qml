@@ -1,6 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Clock in the bar; clicking it opens a month calendar, the same

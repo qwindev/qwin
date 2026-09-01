@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Volume and output-device switcher: speaker glyph and percent in the bar,

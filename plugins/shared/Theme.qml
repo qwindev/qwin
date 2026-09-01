@@ -1,6 +1,6 @@
 pragma Singleton
 import QtQuick
-import qwin 1.0
+import Qwin
 
 // App-wide non-color theming, from config.json's "theme" section (the name
 // is reserved in the registry, like "enabled"). Read once per load: a

@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 
 // Start button: the four-pane Windows logo, clicked to open the Start menu
 // through System.openStartMenu() (which toggles, so a second click closes

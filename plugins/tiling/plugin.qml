@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Tiling: the keyboard surface for the `Tiler` singleton, plus a bar

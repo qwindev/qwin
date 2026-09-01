@@ -1,6 +1,6 @@
 # Configuration
 
-On startup qwin loads plugins from `%APPDATA%\qwin\plugins\` (created
+On startup Qwin loads plugins from `%APPDATA%\Qwin\plugins\` (created
 automatically), or from the folder given with `--plugins-dir`.
 
 `<plugins-dir>\config.json` is the app-wide configuration. Its `enabled`

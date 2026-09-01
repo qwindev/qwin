@@ -27,7 +27,7 @@ When running `build\qwin.exe` directly, `C:\Qt\...\bin` must be on
 
 ## Stopping the app
 
-qwin quits from its tray menu; it keeps running with no visible windows when
+Qwin quits from its tray menu; it keeps running with no visible windows when
 no plugins are installed (`quitOnLastWindowClosed` is false, so bars and
 popups closing must not kill the app). From a script, use:
 

@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Window
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // App launcher, PowerToys Run shaped: a hotkey summons a centered search box

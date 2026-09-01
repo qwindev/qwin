@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Window
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Link launcher: a hotkey summons a centered overlay of the link cards its

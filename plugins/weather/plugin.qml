@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Weather readout: temperature and condition glyph in the bar, place name,

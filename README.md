@@ -1,12 +1,11 @@
-# qwin
+# Qwin
 
-**Hackable desktop plugins for Windows, written in QML — no compiler, no
+**Beautiful desktop plugins for Windows, written in QML — no compiler, no
 build step, live reload on save.**
 
-qwin is a compiled Qt 6 host that loads user-written QML plugins at runtime,
-in the spirit of [Quickshell](https://quickshell.outfoxxed.me/) on Linux.
-Drop a plugin folder in, save a file, and it reloads in place — bad QML shows
-an error panel instead of taking anything down.
+Qwin runs desktop plugins you write in QML, on a native Qt 6 host inspired
+by Quickshell on Linux. Drop a folder into the plugins directory, save a
+file, and your change is on screen about a second later.
 
 - **Frameless desktop plugins** from plain `.qml` files, draggable by
   default, hot-reloaded ~1 s after save.
@@ -26,7 +25,7 @@ A plugin is a folder with a `manifest.json` and a `plugin.qml`:
 // cpu/plugin.qml — manifest.json: { "name": "cpu", "version": "1.0.0" }
 import QtQuick
 import QtQuick.Window
-import qwin 1.0
+import Qwin
 
 Window {
     width: 220; height: 80

@@ -16,7 +16,7 @@ xcopy /e /i plugins dist\plugins
 ```
 
 The `plugins\` copy is what makes a fresh install work: on first launch
-against the default location (`%APPDATA%\qwin\plugins\` missing entirely),
+against the default location (`%APPDATA%\Qwin\plugins\` missing entirely),
 the exe seeds it from the `plugins\` folder beside it. An existing dir —
 even an emptied one — is never touched, and `--plugins-dir` runs never seed.
 CI does the same packaging in `.github/workflows/publish.yml`.

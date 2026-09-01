@@ -94,7 +94,7 @@ int main(int argc, char *argv[])
     // lifetime, is the standard way to detect that before doing any work.
     HANDLE instanceMutex = CreateMutexW(nullptr, TRUE, L"Local\\qwin-single-instance");
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
-        qWarning() << "qwin: already running, exiting";
+        qWarning() << "Qwin: already running, exiting";
         return 0;
     }
     // Leaked deliberately: the OS closes the handle, releasing the mutex,
@@ -103,7 +103,7 @@ int main(int argc, char *argv[])
     Q_UNUSED(instanceMutex);
 
     QApplication app(argc, argv); // QApplication (not QGuiApplication): QSystemTrayIcon needs Widgets
-    QCoreApplication::setApplicationName(QStringLiteral("qwin"));
+    QCoreApplication::setApplicationName(QStringLiteral("Qwin"));
     QCoreApplication::setApplicationVersion(QStringLiteral(QWIN_VERSION_STR));
 
     // Survive having no windows (mid-reload, none installed); quit is tray-only.
@@ -115,7 +115,7 @@ int main(int argc, char *argv[])
     parser.addVersionOption();
     const QCommandLineOption pluginsDirOption(
         QStringLiteral("plugins-dir"),
-        QStringLiteral("Load plugins from <dir> instead of %APPDATA%\\qwin\\plugins."),
+        QStringLiteral("Load plugins from <dir> instead of %APPDATA%\\Qwin\\plugins."),
         QStringLiteral("dir"));
     parser.addOption(pluginsDirOption);
     parser.process(app);
@@ -145,20 +145,20 @@ int main(int argc, char *argv[])
     PluginRegistry registry(pluginsDir);
 
     const auto registerQmlTypes = [&] {
-        qmlRegisterSingletonInstance("qwin", 1, 0, "System", &systemApi);
-        qmlRegisterType<PanelWindow>("qwin", 1, 0, "PanelWindow");
-        qmlRegisterType<Hotkey>("qwin", 1, 0, "Hotkey");
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Desktops", &desktops);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Colors", &colors);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Wifi", &wifi);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Media", &media);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Audio", &audio);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "ActiveWindow", &activeWindow);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Power", &power);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Bluetooth", &bluetooth);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Apps", &apps);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Tiler", &tiling);
-        qmlRegisterSingletonInstance("qwin", 1, 0, "Plugins", &registry);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "System", &systemApi);
+        qmlRegisterType<PanelWindow>("Qwin", 1, 0, "PanelWindow");
+        qmlRegisterType<Hotkey>("Qwin", 1, 0, "Hotkey");
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Desktops", &desktops);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Colors", &colors);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Wifi", &wifi);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Media", &media);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Audio", &audio);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "ActiveWindow", &activeWindow);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Power", &power);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Bluetooth", &bluetooth);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Apps", &apps);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Tiler", &tiling);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Plugins", &registry);
     };
     registerQmlTypes();
 
@@ -194,7 +194,7 @@ int main(int argc, char *argv[])
     QObject::connect(trayMenu.addAction(QStringLiteral("Quit")),
                      &QAction::triggered, &app, &QCoreApplication::quit);
     tray.setContextMenu(&trayMenu);
-    tray.setToolTip(QStringLiteral("qwin — %1").arg(pluginsDir));
+    tray.setToolTip(QStringLiteral("Qwin"));
     tray.show();
 
     return app.exec();

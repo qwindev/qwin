@@ -1,6 +1,6 @@
 import QtQuick
 import QtQml.Models
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Workspace switcher: one button per virtual desktop plus a "+". Meant for

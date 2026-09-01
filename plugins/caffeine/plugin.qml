@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Caffeine: a click-to-arm keep-awake toggle over Power.keepAwake. A filled

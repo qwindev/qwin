@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Battery indicator: charge glyph and percentage in the bar, with charge

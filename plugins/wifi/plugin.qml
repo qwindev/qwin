@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // WiFi indicator: strength glyph and signal percentage in the bar, with the

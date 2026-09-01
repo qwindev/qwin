@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // CPU/RAM readout: the minimal text-only example (`graphs` is its graphical

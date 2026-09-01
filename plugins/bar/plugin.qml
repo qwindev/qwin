@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 
 // Top panel: a thin PanelWindow whose content is assembled at runtime from
 // the plugin names its config.json section lists per slot:

@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // "Now Playing": play/pause, a "Title - Artist" line that marquees past

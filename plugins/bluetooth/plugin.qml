@@ -1,5 +1,5 @@
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Bluetooth indicator: rune glyph and connected count in the bar, with the

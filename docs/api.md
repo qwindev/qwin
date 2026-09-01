@@ -3,7 +3,7 @@
 Everything a plugin can use comes from one import:
 
 ```qml
-import qwin 1.0
+import Qwin
 ```
 
 Singletons: [`System`](#system) · [`Plugins`](#plugins-registry--config) ·
@@ -140,7 +140,7 @@ AppBar API):
 
 ```qml
 import QtQuick
-import qwin 1.0
+import Qwin
 
 PanelWindow {
     edge: Qt.TopEdge   // Qt.TopEdge | Qt.BottomEdge | Qt.LeftEdge | Qt.RightEdge
@@ -298,7 +298,7 @@ plugin does exactly that.
 Reports the window that currently has the keyboard — what makes a bar useful
 in a tiling/virtual-desktop setup. It is driven by `SetWinEventHook`, not a
 poll, and uses the same "is this a real application window" rule as the rest
-of the host, so the desktop, system flyouts and qwin's own panels never
+of the host, so the desktop, system flyouts and Qwin's own panels never
 appear here.
 
 | Member | Description |
@@ -382,7 +382,7 @@ above subsequence matching on purpose — on a localised Windows it is the
 only place the English name survives, which is what makes `notep` find
 *Notatnik* and `calc` find *Kalkulator*.
 
-Launch counts and timestamps persist to `%APPDATA%\qwin\apps-usage.json`
+Launch counts and timestamps persist to `%APPDATA%\Qwin\apps-usage.json`
 — deliberately not under the plugins directory, which is watched, where
 rewriting a file on every launch would hot-reload the plugin each time it
 was used. The bonus is logarithmic in the launch count, decays with age, and

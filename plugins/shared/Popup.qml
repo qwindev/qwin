@@ -1,6 +1,6 @@
 import QtQuick
 import QtQuick.Window
-import qwin 1.0
+import Qwin
 import "."
 
 // Anchored popup for panel plugins. A panel is too thin to render one

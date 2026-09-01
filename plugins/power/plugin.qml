@@ -1,6 +1,6 @@
 pragma ComponentBehavior: Bound
 import QtQuick
-import qwin 1.0
+import Qwin
 import "../shared"
 
 // Power: the session menu over the Power singleton, which acts immediately.
