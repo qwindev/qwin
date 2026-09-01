@@ -49,7 +49,7 @@ int main(int argc, char *argv[])
 {
     QApplication app(argc, argv); // QApplication (not QGuiApplication): QSystemTrayIcon needs Widgets
     QCoreApplication::setApplicationName(QStringLiteral("qwin"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(QWIN_VERSION_STR));
 
     // Survive having no windows (mid-reload, none installed); quit is tray-only.
     app.setQuitOnLastWindowClosed(false);

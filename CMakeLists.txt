@@ -1,5 +1,9 @@
 cmake_minimum_required(VERSION 3.16)
-project(qwin VERSION 0.1 LANGUAGES CXX)
+
+# Real versions come from git tags: CI configures with -DQWIN_VERSION=x.y.z
+# (see .github/workflows/publish.yml). 0.0.0 marks a local dev build.
+set(QWIN_VERSION "0.0.0" CACHE STRING "Build version, set from the git tag in CI")
+project(qwin VERSION ${QWIN_VERSION} LANGUAGES CXX)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Widgets)
 qt_standard_project_setup()
@@ -37,6 +41,8 @@ qt_add_executable(qwin
 #   (Bluetooth)
 target_link_libraries(qwin PRIVATE Qt6::Core Qt6::Gui Qt6::Qml Qt6::Quick Qt6::Widgets
     shell32 wlanapi iphlpapi dwmapi windowsapp ole32 version powrprof bthprops setupapi)
+
+target_compile_definitions(qwin PRIVATE QWIN_VERSION_STR="${PROJECT_VERSION}")
 
 # Hide the console window on release builds.
 set_target_properties(qwin PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)

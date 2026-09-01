@@ -1,0 +1,102 @@
+name: Publish
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to build (e.g. v0.2.0). Leave empty to use the latest tag."
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  resolve-version:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.pick.outputs.tag }}
+      version: ${{ steps.pick.outputs.version }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Pick tag
+        id: pick
+        run: |
+          set -euo pipefail
+          input="${{ inputs.tag }}"
+          if [ -z "$input" ]; then
+            tag="$(git describe --tags --abbrev=0)"
+          else
+            tag="$input"
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "::error ::Tag '$tag' does not exist on origin"
+              exit 1
+            fi
+          fi
+          version="${tag#v}"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "Resolved tag=$tag version=$version"
+
+  build:
+    needs: resolve-version
+    runs-on: windows-latest
+    steps:
+      - name: Checkout tag
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.resolve-version.outputs.tag }}
+
+      - name: Install Qt
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: 6.8.3
+          arch: win64_msvc2022_64
+          cache: true
+
+      # The CI equivalent of a vcvars64 prompt; also sets VCToolsRedistDir
+      # for the app-local CRT copy below.
+      - name: MSVC environment
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Configure
+        run: >
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DQWIN_VERSION=${{ needs.resolve-version.outputs.version }}
+
+      - name: Build
+        run: cmake --build build
+
+      # Mirrors docs/packaging.md: xcopy-portable dist folder, pruned Qt
+      # deploy, app-local VC143 CRT instead of the redist installer.
+      - name: Package
+        run: |
+          New-Item -ItemType Directory dist | Out-Null
+          Copy-Item build\qwin.exe dist\
+          Copy-Item third_party\VirtualDesktopAccessor.dll dist\
+          windeployqt --qmldir plugins --qmldir deploy --release `
+            --no-compiler-runtime --no-translations --no-opengl-sw `
+            --no-system-d3d-compiler --no-system-dxc-compiler `
+            dist\qwin.exe
+          Copy-Item "$env:VCToolsRedistDir\x64\Microsoft.VC143.CRT\*.dll" dist\
+          Copy-Item -Recurse plugins dist\plugins
+          Compress-Archive -Path dist\* -DestinationPath "qwin-${{ needs.resolve-version.outputs.tag }}-win64.zip"
+
+      - name: Attach to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $tag = "${{ needs.resolve-version.outputs.tag }}"
+          $zip = "qwin-$tag-win64.zip"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --title "qwin $tag" --notes "See CHANGELOG.md for details."
+          }
+          gh release upload $tag $zip --clobber
