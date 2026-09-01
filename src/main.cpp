@@ -1,8 +1,11 @@
 #include <QAction>
 #include <QApplication>
 #include <QCommandLineParser>
+#include <QDebug>
 #include <QDesktopServices>
 #include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QMenu>
 #include <QPainter>
 #include <QQmlApplicationEngine>
@@ -45,11 +48,46 @@ static QIcon makeTrayIcon()
     return QIcon(pixmap);
 }
 
+static bool copyDirRecursive(const QString &srcPath, const QString &dstPath)
+{
+    QDir dst(dstPath);
+    if (!dst.mkpath(QStringLiteral(".")))
+        return false;
+    const QFileInfoList entries
+        = QDir(srcPath).entryInfoList(QDir::Files | QDir::Dirs | QDir::NoDotAndDotDot);
+    for (const QFileInfo &entry : entries) {
+        const QString target = dst.filePath(entry.fileName());
+        if (entry.isDir()) {
+            if (!copyDirRecursive(entry.absoluteFilePath(), target))
+                return false;
+        } else if (!QFile::copy(entry.absoluteFilePath(), target)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// First run against the default location: seed it from the examples bundled
+// next to the exe, so unzip-and-double-click shows a working bar instead of
+// an empty desktop. Only a *missing* dir seeds - one the user emptied on
+// purpose stays empty, and --plugins-dir runs never seed.
+static void seedBundledPlugins(const QString &pluginsDir)
+{
+    const QString bundled = QCoreApplication::applicationDirPath() + QStringLiteral("/plugins");
+    if (!QDir(bundled).exists()
+        || QDir(bundled).absolutePath().compare(pluginsDir, Qt::CaseInsensitive) == 0)
+        return;
+    if (copyDirRecursive(bundled, pluginsDir))
+        qInfo().noquote() << "first run: seeded" << pluginsDir << "from" << bundled;
+    else
+        qWarning().noquote() << "first run: failed to seed" << pluginsDir << "from" << bundled;
+}
+
 int main(int argc, char *argv[])
 {
     QApplication app(argc, argv); // QApplication (not QGuiApplication): QSystemTrayIcon needs Widgets
     QCoreApplication::setApplicationName(QStringLiteral("qwin"));
-    QCoreApplication::setApplicationVersion(QStringLiteral("0.1"));
+    QCoreApplication::setApplicationVersion(QStringLiteral(QWIN_VERSION_STR));
 
     // Survive having no windows (mid-reload, none installed); quit is tray-only.
     app.setQuitOnLastWindowClosed(false);
@@ -66,11 +104,14 @@ int main(int argc, char *argv[])
     parser.process(app);
 
     QString pluginsDir = parser.value(pluginsDirOption);
-    if (pluginsDir.isEmpty()) {
+    const bool defaultLocation = pluginsDir.isEmpty();
+    if (defaultLocation) {
         pluginsDir = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation)
                      + QStringLiteral("/plugins");
     }
     pluginsDir = QDir(pluginsDir).absolutePath();
+    if (defaultLocation && !QDir(pluginsDir).exists())
+        seedBundledPlugins(pluginsDir);
     QDir().mkpath(pluginsDir);
 
     SystemApi systemApi(pluginsDir);

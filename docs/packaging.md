@@ -12,12 +12,22 @@ C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe --qmldir plugins --qmldir deploy --r
   --no-system-d3d-compiler --no-system-dxc-compiler ^
   dist\qwin.exe
 copy "%VCINSTALLDIR%Redist\MSVC\<ver>\x64\Microsoft.VC143.CRT\*.dll" dist\
+xcopy /e /i plugins dist\plugins
 ```
+
+The `plugins\` copy is what makes a fresh install work: on first launch
+against the default location (`%APPDATA%\qwin\plugins\` missing entirely),
+the exe seeds it from the `plugins\` folder beside it. An existing dir —
+even an emptied one — is never touched, and `--plugins-dir` runs never seed.
+CI does the same packaging in `.github/workflows/publish.yml`.
 
 That produces a ~65 MB folder (~135 MB without the prune flags). Notes:
 
 - Run windeployqt from a VS developer prompt so `VCINSTALLDIR` is set for the
   CRT copy on the last line.
+- The `Microsoft.VC143.CRT` folder name tracks the toolset (VC143 = VS2022;
+  newer VS versions rename it — CI globs `Microsoft.VC*.CRT` for this). The
+  DLLs inside keep their `*140.dll` names either way.
 - `--qmldir` must point at QML sources so windeployqt bundles the right QML
   modules. Users can import arbitrary QtQuick modules at runtime, so the
   second `--qmldir deploy` scans `deploy/kitchen-sink.qml`, which imports
