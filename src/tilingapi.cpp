@@ -177,6 +177,38 @@ bool isCloakedAlive(HWND hwnd)
         && cloaked != 0;
 }
 
+// Top-to-bottom, then left-to-right, with "same row" judged loosely: two
+// windows whose tops differ by less than half the shorter one's height are
+// side by side, and the left one goes first. A strict compare on the top
+// edge would put a window a few pixels higher ahead of one well to its
+// left, which is not how anyone reads a screen. The tolerance makes this no
+// strict weak ordering, so it is an insertion sort by hand rather than
+// std::sort, which requires one. A handful of windows per monitor, so cost
+// is not a concern. Z-order (the input order) breaks the remaining ties.
+bool readsBefore(HWND a, HWND b)
+{
+    RECT ra, rb;
+    if (!GetWindowRect(a, &ra) || !GetWindowRect(b, &rb))
+        return false;
+    const LONG tolerance = qMin(ra.bottom - ra.top, rb.bottom - rb.top) / 2;
+    if (qAbs(ra.top - rb.top) > tolerance)
+        return ra.top < rb.top;
+    return ra.left < rb.left;
+}
+
+void sortIntoReadingOrder(QVector<quintptr> *ids)
+{
+    for (int i = 1; i < ids->size(); ++i) {
+        const quintptr id = ids->at(i);
+        int j = i;
+        while (j > 0 && readsBefore(toHwnd(id), toHwnd(ids->at(j - 1)))) {
+            (*ids)[j] = ids->at(j - 1);
+            --j;
+        }
+        (*ids)[j] = id;
+    }
+}
+
 bool parseDirection(const QString &text, layout::Direction *out)
 {
     const QString d = text.trimmed().toLower();
@@ -304,6 +336,7 @@ void TilingApi::setEnabled(bool enabled)
     }
 
     m_enabled = enabled;
+    qInfo() << "Tiler: enabled ->" << enabled;
     if (m_enabled) {
         m_sweepTimer.start();
         rescan();
@@ -641,10 +674,13 @@ void TilingApi::rescan()
     EnumWindows(collectWindow, reinterpret_cast<LPARAM>(&windows));
 
     // Ordered, not a QSet: when several windows are adopted in one pass -
-    // at startup, or when tiling is enabled - hash order would decide the
-    // shape of the layout, so the same set of windows could come out
-    // arranged differently from one run to the next. EnumWindows walks the
-    // Z-order top-first, which is the closest thing to most-recently-used.
+    // at startup, or when tiling is enabled - the order decides the shape
+    // of the layout. Sorted into reading order below, not left in the
+    // EnumWindows (Z-) order it arrives in: Z-order is focus history, so
+    // disabling and re-enabling with a different window focused rebuilt the
+    // layout the other way round, and A | B came back as B | A. Screen
+    // position is what the user sees, and it is what a dwindle arrangement
+    // reproduces itself from - the same windows in the same tiles.
     QHash<QString, QVector<quintptr>> wanted;
     // Passed isTileable but treeKey() came back empty this pass: a window
     // pinned to all desktops, or a transient GetWindowDesktopId failure.
@@ -661,6 +697,9 @@ void TilingApi::rescan()
         else
             wanted[key].append(toId(hwnd));
     }
+
+    for (auto it = wanted.begin(); it != wanted.end(); ++it)
+        sortIntoReadingOrder(&it.value());
 
     bool changed = false;
 
@@ -809,6 +848,17 @@ void TilingApi::sweep()
         releaseWindow(id, false);
     }
 
+    if (m_debug) {
+        // The retile log shows what the layout wants; this shows a window
+        // being pushed back after it moved itself, which is the other way a
+        // rect gets applied.
+        for (const layout::Placement &p : fixes) {
+            qInfo().noquote() << QStringLiteral("Tiler: drift-fix %1,%2 %3x%4  %5")
+                                     .arg(p.rect.x(), 5).arg(p.rect.y(), 5)
+                                     .arg(p.rect.width(), 5).arg(p.rect.height(), 5)
+                                     .arg(describe(p.id));
+        }
+    }
     if (!fixes.isEmpty())
         applyPlacements(fixes);
     if (!giveUp.isEmpty()) {
@@ -827,9 +877,25 @@ void TilingApi::applyPlacements(const QVector<layout::Placement> &places)
 
     // A maximized window ignores SetWindowPos, and ShowWindow is not valid
     // inside a DeferWindowPos batch - so the restores go first, alone.
+    //
+    // Not SW_RESTORE: that activates the window, so enabling the tiler with
+    // a maximized window behind the focused one would hand it the focus.
+    // Even SW_SHOWNOACTIVATE raises it to the top of the Z-order (measured),
+    // which a tiler has no business changing either - so put it back under
+    // whatever was above it.
     for (const layout::Placement &p : places) {
-        if (IsZoomed(toHwnd(p.id)))
-            ShowWindow(toHwnd(p.id), SW_RESTORE);
+        HWND hwnd = toHwnd(p.id);
+        if (!IsZoomed(hwnd))
+            continue;
+        // NULL is HWND_TOP: nothing above it, or only topmost windows -
+        // inserting after one of those would make this one topmost too,
+        // and HWND_TOP lands at the head of the non-topmost band anyway.
+        HWND above = GetWindow(hwnd, GW_HWNDPREV);
+        if (above && (GetWindowLongPtrW(above, GWL_EXSTYLE) & WS_EX_TOPMOST))
+            above = nullptr;
+        ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        SetWindowPos(hwnd, above, 0, 0, 0, 0,
+                     SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
     }
 
     // One batch, so a re-tile lands in a single frame instead of cascading
