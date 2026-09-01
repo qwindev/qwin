@@ -1,0 +1,150 @@
+{
+    "enabled": ["bar", "launcher", "run"],
+
+    "theme": {
+        "fontFamily": "Cascadia Code"
+    },
+
+    "bar": {
+        "left": ["start", "workspaces", "tiling", "window-title"],
+        "center": ["clock"],
+        "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
+                  "battery", "power"]
+    },
+
+    "tiling": {
+        "enabled": true,
+        "gap": 16,
+        "outerGap": 16,
+        "minWidth": 360,
+        "minHeight": 220,
+        "resizeStep": 40,
+        "floatProcesses": ["Taskmgr.exe"],
+        "keys": {
+            "focusLeft": "Alt+H",
+            "focusDown": "Alt+J",
+            "focusUp": "Alt+K",
+            "focusRight": "Alt+L",
+            "moveLeft": "Shift+Alt+H",
+            "moveDown": "Shift+Alt+J",
+            "moveUp": "Shift+Alt+K",
+            "moveRight": "Shift+Alt+L",
+            "shrinkWidth": "Ctrl+Alt+H",
+            "growHeight": "Ctrl+Alt+J",
+            "shrinkHeight": "Ctrl+Alt+K",
+            "growWidth": "Ctrl+Alt+L",
+            "toggleFloating": "Shift+Alt+F",
+            "toggleSplit": "Shift+Alt+V",
+            "equalize": "Shift+Alt+E",
+            "toggleTiling": "Shift+Alt+T"
+        }
+    },
+
+    "start": {
+        "color": "",
+        "size": 14
+    },
+
+    "run": {
+        "hotkey": "Alt+Space",
+        "maxResults": 8,
+        "width": 620,
+        "top": 0.3,
+        "includeDesktop": true,
+        "showSubtitle": false
+    },
+
+    "clock": {
+        "format": "ddd dd MMM  hh:mm:ss"
+    },
+
+    "window-title": {
+        "maxWidth": 320,
+        "showIcon": true,
+        "showApp": false
+    },
+
+    "media": {
+        "maxWidth": 220,
+        "scrollSpeed": 30
+    },
+
+    "volume": {
+        "step": 5,
+        "showPercent": false
+    },
+
+    "bluetooth": {
+        "showCount": true,
+        "maxNameWidth": 170
+    },
+
+    "caffeine": {
+        "minutes": 0
+    },
+
+    "power": {
+        "confirmSeconds": 4,
+        "items": ["lock", "signout", "sleep", "hibernate", "restart", "shutdown"]
+    },
+
+    "weather": {
+        "latitude": 52.2297,
+        "longitude": 21.0122,
+        "name": "Warsaw",
+        "units": "metric",
+        "refreshMinutes": 15
+    },
+
+    "graphs": {
+        "history": 60,
+        "show": ["cpu", "ram"],
+        "width": 46
+    },
+
+    "launcher": {
+        "groups": [
+            {
+                "name": "dev",
+                "links": [
+                    { "name": "GitHub", "url": "https://github.com" },
+                    { "name": "Stack Overflow", "url": "https://stackoverflow.com" },
+                    { "name": "MDN", "url": "https://developer.mozilla.org" },
+                    { "name": "Qt Documentation", "url": "https://doc.qt.io" }
+                ]
+            },
+            {
+                "name": "ai",
+                "links": [
+                    { "name": "Claude", "url": "https://claude.ai" },
+                    { "name": "Hugging Face", "url": "https://huggingface.co" },
+                    { "name": "arXiv", "url": "https://arxiv.org" }
+                ]
+            },
+            {
+                "name": "news",
+                "links": [
+                    { "name": "Hacker News", "url": "https://news.ycombinator.com" },
+                    { "name": "Lobsters", "url": "https://lobste.rs" },
+                    { "name": "The Register", "url": "https://www.theregister.com" }
+                ]
+            },
+            {
+                "name": "tools",
+                "links": [
+                    { "name": "regex101", "url": "https://regex101.com" },
+                    { "name": "crontab guru", "url": "https://crontab.guru" },
+                    { "name": "DevDocs", "url": "https://devdocs.io" },
+                    { "name": "JSON Lint", "url": "https://jsonlint.com" }
+                ]
+            },
+            {
+                "name": "media",
+                "links": [
+                    { "name": "YouTube", "url": "https://youtube.com" },
+                    { "name": "Spotify", "url": "https://open.spotify.com" }
+                ]
+            }
+        ]
+    }
+}

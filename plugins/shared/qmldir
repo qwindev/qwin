@@ -1,0 +1,10 @@
+# Only PopupState needs a qmldir (a QML singleton is unreachable without
+# one), but a qmldir takes over type resolution for its whole directory, so
+# every component here has to stay listed or it stops resolving.
+singleton PopupState 1.0 PopupState.qml
+singleton Theme 1.0 Theme.qml
+Popup 1.0 Popup.qml
+PopupButton 1.0 PopupButton.qml
+Sparkline 1.0 Sparkline.qml
+WeatherIcon 1.0 WeatherIcon.qml
+WifiIcon 1.0 WifiIcon.qml

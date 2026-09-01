@@ -1,0 +1,17 @@
+# Build output
+build/
+dist/
+
+# Run/debug logs (QT_FORCE_STDERR_LOGGING redirects)
+*.log
+
+# Local guidance file (not shared via the repo)
+CLAUDE.md
+
+# IDE / tooling
+.vs/
+.vscode/
+.claude/settings.local.json
+.superpowers/
+CMakeUserPresets.json
+compile_commands.json
