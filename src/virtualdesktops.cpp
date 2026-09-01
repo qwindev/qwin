@@ -111,6 +111,13 @@ VirtualDesktops::~VirtualDesktops()
         m_unregisterHook(m_msgWindow);
         DestroyWindow(static_cast<HWND>(m_msgWindow));
     }
+    // Unloaded here rather than left to process exit: the DLL's own detach
+    // cleanup deadlocks once ExitProcess has terminated the threads it
+    // started, and the host then hangs half-exited - windows gone, exit code
+    // set, unkillable, still holding the single-instance mutex, so the next
+    // launch says "already running" until a reboot. Measured: every tray
+    // quit hung without this call and none with it, hook fired or not.
+    m_dll.unload();
 }
 
 void VirtualDesktops::refresh()
