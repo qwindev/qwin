@@ -8,6 +8,7 @@
 #include <QScreen>
 
 #include <windows.h>
+#include <dwmapi.h>
 
 #include <string>
 
@@ -151,6 +152,22 @@ bool looksLikeCandidate(HWND hwnd)
     DWORD pid = 0;
     GetWindowThreadProcessId(hwnd, &pid);
     return pid != GetCurrentProcessId() && hwnd != GetShellWindow();
+}
+
+// Alive but composited away: a window parked on another virtual desktop, or
+// one the switch animation has not uncloaked yet. isFocusableAppWindow
+// rejects these, so a rescan sees them as "gone" - but their tree seats must
+// survive the round trip, or every desktop switch would rebuild that
+// desktop's layout in Z-order (most-recently-used first) and shuffle the
+// tiles. Minimized is excluded: minimizing removes a window from the layout
+// whether or not its desktop is the active one.
+bool isCloakedAlive(HWND hwnd)
+{
+    if (!IsWindow(hwnd) || IsIconic(hwnd))
+        return false;
+    int cloaked = 0;
+    return SUCCEEDED(DwmGetWindowAttribute(hwnd, DWMWA_CLOAKED, &cloaked, sizeof(cloaked)))
+        && cloaked != 0;
 }
 
 bool parseDirection(const QString &text, layout::Direction *out)
@@ -518,7 +535,7 @@ void TilingApi::rescan()
     EnumWindows(collectWindow, reinterpret_cast<LPARAM>(&windows));
 
     // Ordered, not a QSet: when several windows are adopted in one pass -
-    // at startup, or after a desktop switch - hash order would decide the
+    // at startup, or when tiling is enabled - hash order would decide the
     // shape of the layout, so the same set of windows could come out
     // arranged differently from one run to the next. EnumWindows walks the
     // Z-order top-first, which is the closest thing to most-recently-used.
@@ -534,13 +551,17 @@ void TilingApi::rescan()
     bool changed = false;
 
     // Drop what left: closed, minimized, floated, or moved to another
-    // monitor or desktop. No geometry restore here - a window that only
+    // monitor or desktop. A cloaked survivor stays put - see isCloakedAlive;
+    // it cannot be in `wanted` under any key, so this is the one test between
+    // it and eviction. No geometry restore here - a window that only
     // changed monitors is re-adopted below, and restoring it first would
     // just be a visible flash before the new tile lands.
     for (auto it = m_trees.constBegin(); it != m_trees.constEnd(); ++it) {
         const QVector<quintptr> keep = wanted.value(it.key());
         for (quintptr id : it.value()->ids()) {
             if (keep.contains(id))
+                continue;
+            if (isCloakedAlive(toHwnd(id)))
                 continue;
             it.value()->remove(id);
             m_managed.remove(id);
@@ -593,14 +614,14 @@ void TilingApi::rescan()
     }
 
     // Overflow windows that have since closed would otherwise accumulate for
-    // the life of the session.
-    if (!m_overflow.isEmpty()) {
-        QSet<quintptr> alive;
-        for (auto it = wanted.constBegin(); it != wanted.constEnd(); ++it) {
-            for (quintptr id : it.value())
-                alive.insert(id);
-        }
-        m_overflow.intersect(alive);
+    // the life of the session. Keyed on window death, not on membership in
+    // `wanted`: one parked on another desktop is merely cloaked, and
+    // forgetting it would re-log the adoption refusal on every switch back.
+    for (auto it = m_overflow.begin(); it != m_overflow.end();) {
+        if (IsWindow(toHwnd(*it)))
+            ++it;
+        else
+            it = m_overflow.erase(it);
     }
 
     // A window that opened and took the foreground never produced a usable
