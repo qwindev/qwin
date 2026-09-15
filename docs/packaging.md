@@ -6,7 +6,6 @@ installed:
 ```cmd
 mkdir dist
 copy build\qwin.exe dist\
-copy third_party\VirtualDesktopAccessor.dll dist\
 C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe --qmldir plugins --qmldir deploy --release ^
   --no-compiler-runtime --no-translations --no-opengl-sw ^
   --no-system-d3d-compiler --no-system-dxc-compiler ^

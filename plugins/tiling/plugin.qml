@@ -24,6 +24,9 @@ import "../shared"
 //       "minHeight": 220,         // below either, the new window stays floating
 //       "resizeStep": 40,         // px one grow/shrink chord moves a divider
 //       "floatProcesses": ["Taskmgr.exe"],
+//       "workspaces": 9,         // per monitor, 1-20; see plugins/workspaces
+//       "hideMethod": "cloak",   // "cloak" | "minimize"; see docs/api.md#tiler
+//       "pinnedTopmost": false,  // keep a pinned window above the active workspace
 //       "debug": false,          // log every adoption and every rect applied
 //       "keys": { "focusLeft": "Alt+H", ... }   // see defaults below
 //   }
@@ -57,7 +60,8 @@ Rectangle {
         { seq: chord("toggleFloating", "Shift+Alt+F"), action: "float"    },
         { seq: chord("toggleSplit",    "Shift+Alt+V"), action: "split"    },
         { seq: chord("equalize",       "Shift+Alt+E"), action: "equalize" },
-        { seq: chord("toggleTiling",   "Shift+Alt+T"), action: "toggle"   }
+        { seq: chord("toggleTiling",   "Shift+Alt+T"), action: "toggle"   },
+        { seq: chord("togglePinned",   "Shift+Alt+P"), action: "pin"      }
     ]
 
     // A name and a switch rather than a closure per row: the model is data,
@@ -71,6 +75,7 @@ Rectangle {
         case "split":    Tiler.toggleSplit(); break
         case "equalize": Tiler.equalize(); break
         case "toggle":   Tiler.enabled = !Tiler.enabled; break
+        case "pin":      Tiler.togglePinned(); break
         default: console.warn("tiling: unknown action", action)
         }
     }
@@ -84,6 +89,9 @@ Rectangle {
     Binding { target: Tiler; property: "minHeight"; value: tilingItem.cfg.minHeight !== undefined ? tilingItem.cfg.minHeight : 220 }
     Binding { target: Tiler; property: "resizeStep"; value: tilingItem.cfg.resizeStep !== undefined ? tilingItem.cfg.resizeStep : 40 }
     Binding { target: Tiler; property: "floatProcesses"; value: tilingItem.cfg.floatProcesses || [] }
+    Binding { target: Tiler; property: "workspaceCount"; value: tilingItem.cfg.workspaces !== undefined ? tilingItem.cfg.workspaces : 9 }
+    Binding { target: Tiler; property: "hideMethod"; value: tilingItem.cfg.hideMethod !== undefined ? tilingItem.cfg.hideMethod : "cloak" }
+    Binding { target: Tiler; property: "pinnedTopmost"; value: tilingItem.cfg.pinnedTopmost === true }
     Binding { target: Tiler; property: "debug"; value: tilingItem.cfg.debug === true }
 
     Component.onCompleted: {

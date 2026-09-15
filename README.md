@@ -12,7 +12,7 @@ file, and your change is on screen about a second later.
 - **Taskbar-style panels** that dock to a screen edge and reserve their
   space, exactly like the taskbar.
 - **A real plugin API**: system stats, WiFi, Bluetooth, audio, media
-  controls, the focused window, virtual desktops, global hotkeys, power
+  controls, the focused window, workspaces, global hotkeys, power
   actions, installed-apps search — and a dwindle tiling window manager.
 - **Live theming**: one `colors.json` recolors every plugin without a
   reload. Everything degrades gracefully on hardware you don't have.
@@ -58,6 +58,4 @@ usable desktop out of the box live in [`plugins/`](plugins/).
 
 ## License
 
-[MIT](LICENSE). Qt is used under LGPL-3.0 (dynamically linked);
-[VirtualDesktopAccessor.dll](https://github.com/Ciantic/VirtualDesktopAccessor)
-(MIT) is bundled in `third_party/` and loaded at runtime.
+[MIT](LICENSE). Qt is used under LGPL-3.0 (dynamically linked).

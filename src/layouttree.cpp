@@ -1,5 +1,8 @@
 #include "layouttree.h"
 
+#include <QJsonValue>
+#include <QLatin1String>
+#include <QString>
 #include <QtGlobal>
 
 #include <algorithm>
@@ -449,6 +452,125 @@ bool Tree::toggleSplit(quintptr id)
         return false;
     Node *p = leaf->parent;
     p->kind = (p->kind == SplitKind::Columns) ? SplitKind::Rows : SplitKind::Columns;
+    return true;
+}
+
+// --------------------------------------------------------------- persistence
+
+QJsonObject Tree::nodeToJson(const Node *node)
+{
+    if (!node)
+        return QJsonObject(); // never reached from toJson(): a and b always exist together
+    if (node->isLeaf())
+        return QJsonObject{ { QStringLiteral("id"), double(node->id) } };
+    return QJsonObject{
+        { QStringLiteral("kind"), node->kind == SplitKind::Columns
+              ? QStringLiteral("columns") : QStringLiteral("rows") },
+        { QStringLiteral("ratio"), node->ratio },
+        { QStringLiteral("a"), nodeToJson(node->a.get()) },
+        { QStringLiteral("b"), nodeToJson(node->b.get()) },
+    };
+}
+
+QJsonObject Tree::toJson() const
+{
+    return nodeToJson(m_root.get());
+}
+
+std::unique_ptr<Tree::Node> Tree::nodeFromJson(const QJsonObject &obj, Node *parent,
+                                               const std::function<bool(quintptr)> &accept,
+                                               QHash<quintptr, Node *> *index, bool *malformed)
+{
+    if (obj.contains(QStringLiteral("id"))) {
+        const QJsonValue idVal = obj.value(QStringLiteral("id"));
+        if (!idVal.isDouble()) {
+            *malformed = true;
+            return nullptr;
+        }
+        const quintptr id = quintptr(idVal.toDouble());
+        // 0 means "no target" to insert(); a duplicate would corrupt m_index.
+        if (id == 0 || index->contains(id)) {
+            *malformed = true;
+            return nullptr;
+        }
+        if (accept && !accept(id))
+            return nullptr; // rejected, not malformed - caller collapses around the gap
+
+        auto leaf = std::make_unique<Node>();
+        leaf->id = id;
+        leaf->parent = parent;
+        index->insert(id, leaf.get());
+        return leaf;
+    }
+
+    const QJsonValue kindVal = obj.value(QStringLiteral("kind"));
+    const QJsonValue ratioVal = obj.value(QStringLiteral("ratio"));
+    const QJsonValue aVal = obj.value(QStringLiteral("a"));
+    const QJsonValue bVal = obj.value(QStringLiteral("b"));
+    if (!kindVal.isString() || !ratioVal.isDouble() || !aVal.isObject() || !bVal.isObject()) {
+        *malformed = true;
+        return nullptr;
+    }
+    SplitKind kind;
+    if (kindVal.toString() == QLatin1String("columns"))
+        kind = SplitKind::Columns;
+    else if (kindVal.toString() == QLatin1String("rows"))
+        kind = SplitKind::Rows;
+    else {
+        *malformed = true;
+        return nullptr;
+    }
+
+    auto split = std::make_unique<Node>();
+    split->parent = parent;
+    split->kind = kind;
+    split->ratio = qBound(kMinRatio, ratioVal.toDouble(), 1.0 - kMinRatio);
+
+    std::unique_ptr<Node> a = nodeFromJson(aVal.toObject(), split.get(), accept, index, malformed);
+    if (*malformed)
+        return nullptr;
+    std::unique_ptr<Node> b = nodeFromJson(bVal.toObject(), split.get(), accept, index, malformed);
+    if (*malformed)
+        return nullptr;
+
+    // A lone survivor takes the split's place, exactly like remove() lifting
+    // the sibling; neither means the split collapses with them.
+    if (a && b) {
+        split->a = std::move(a);
+        split->b = std::move(b);
+        return split;
+    }
+    if (a) {
+        a->parent = parent;
+        return a;
+    }
+    if (b) {
+        b->parent = parent;
+        return b;
+    }
+    return nullptr;
+}
+
+bool Tree::fromJson(const QJsonObject &obj, const std::function<bool(quintptr)> &accept)
+{
+    // {} is toJson()'s empty tree, not malformed: the caller's only answer to
+    // malformed is to distrust the whole state file.
+    if (obj.isEmpty()) {
+        m_root.reset();
+        m_index.clear();
+        m_lastInserted = 0;
+        return true;
+    }
+
+    QHash<quintptr, Node *> index;
+    bool malformed = false;
+    std::unique_ptr<Node> root = nodeFromJson(obj, nullptr, accept, &index, &malformed);
+    if (malformed)
+        return false; // tree left untouched
+
+    m_root = std::move(root); // may be null: every id rejected is a valid empty tree
+    m_index = std::move(index);
+    m_lastInserted = 0;
     return true;
 }
 

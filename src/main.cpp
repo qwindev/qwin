@@ -24,7 +24,6 @@
 #include "powerapi.h"
 #include "systemapi.h"
 #include "tilingapi.h"
-#include "virtualdesktops.h"
 #include "pluginmanager.h"
 #include "pluginregistry.h"
 #include "wifiapi.h"
@@ -132,7 +131,6 @@ int main(int argc, char *argv[])
     QDir().mkpath(pluginsDir);
 
     SystemApi systemApi(pluginsDir);
-    VirtualDesktops desktops;
     ColorPalette colors(pluginsDir);
     WifiApi wifi;
     MediaApi media;
@@ -148,7 +146,6 @@ int main(int argc, char *argv[])
         qmlRegisterSingletonInstance("Qwin", 1, 0, "System", &systemApi);
         qmlRegisterType<PanelWindow>("Qwin", 1, 0, "PanelWindow");
         qmlRegisterType<Hotkey>("Qwin", 1, 0, "Hotkey");
-        qmlRegisterSingletonInstance("Qwin", 1, 0, "Desktops", &desktops);
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Colors", &colors);
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Wifi", &wifi);
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Media", &media);
@@ -161,16 +158,6 @@ int main(int argc, char *argv[])
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Plugins", &registry);
     };
     registerQmlTypes();
-
-    // Wired here rather than inside tilingapi.cpp: the tiler keys its layouts
-    // by each window's own virtual desktop, but has to keep working on a
-    // machine whose VirtualDesktopAccessor.dll is missing, or missing just
-    // this export - leaving the provider unset is how it finds out.
-    if (desktops.supportsWindowDesktopId()) {
-        tiling.setDesktopGuidProvider(
-            [&desktops](void *hwnd) { return desktops.windowDesktopId(hwnd); });
-    }
-    QObject::connect(&desktops, &VirtualDesktops::changed, &tiling, &TilingApi::rescan);
 
     // The manager rebuilds the engine on shared/ reloads; each rebuild must
     // redo the registrations, as a by-instance singleton only serves the

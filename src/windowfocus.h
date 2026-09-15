@@ -2,10 +2,10 @@
 
 #include <functional>
 
-// Handing the keyboard to a real application window. Shared by
-// VirtualDesktops (a switch leaves the foreground on the desktop being left)
-// and SystemApi (a popup that took focus closes again). HWNDs travel as
-// void* to keep windows.h out of this header, like the rest of them.
+// Handing the keyboard to a real application window. Shared by the tiler's
+// workspace switch (nothing else picks a sane target on the workspace being
+// landed on) and by SystemApi (a popup that took focus closes again). HWNDs
+// travel as void* to keep windows.h out of this header, like the rest of them.
 namespace windowfocus {
 
 // Visible, non-minimized, non-cloaked, unowned, Alt+Tab-able application

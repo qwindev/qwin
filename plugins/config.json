@@ -20,6 +20,9 @@
         "minHeight": 220,
         "resizeStep": 40,
         "floatProcesses": ["Taskmgr.exe"],
+        "workspaces": 9,
+        "hideMethod": "cloak",
+        "pinnedTopmost": false,
         "keys": {
             "focusLeft": "Alt+H",
             "focusDown": "Alt+J",
@@ -36,8 +39,16 @@
             "toggleFloating": "Shift+Alt+F",
             "toggleSplit": "Shift+Alt+V",
             "equalize": "Shift+Alt+E",
-            "toggleTiling": "Shift+Alt+T"
+            "toggleTiling": "Shift+Alt+T",
+            "togglePinned": "Shift+Alt+P"
         }
+    },
+
+    "workspaces": {
+        "switchKey": "Shift+Alt+{n}",
+        "moveKey": "Ctrl+Alt+{n}",
+        "moveToEmptyKey": "Shift+Alt+M",
+        "showEmpty": false
     },
 
     "start": {

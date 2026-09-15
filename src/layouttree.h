@@ -1,9 +1,11 @@
 #pragma once
 
 #include <QHash>
+#include <QJsonObject>
 #include <QRect>
 #include <QVector>
 
+#include <functional>
 #include <memory>
 
 // The layout half of the tiler: a binary space partition over opaque ids,
@@ -120,6 +122,17 @@ public:
     // Every split back to a half, discarding the resize history.
     void equalize();
 
+    // Persistence for the tiler's state file. A leaf is {"id": <number>}, a
+    // split {"kind": "columns"|"rows", "ratio": 0.5, "a": {...}, "b": {...}}.
+    // Ids ride JSON numbers: Windows' HWNDs fit in 32 bits, well inside a
+    // double's 53-bit mantissa.
+    QJsonObject toJson() const;
+    // Rebuilds from toJson()'s output. A leaf id `accept` rejects is dropped
+    // and the tree collapses around it exactly as remove() would. Returns
+    // false only for malformed input (missing/wrong-typed fields, a duplicate
+    // or zero id), leaving the tree untouched; {} is a valid empty tree.
+    bool fromJson(const QJsonObject &obj, const std::function<bool(quintptr)> &accept);
+
 private:
     struct Node {
         quintptr id = 0;                      // leaf only
@@ -144,6 +157,13 @@ private:
     // First ancestor whose divider lies on `edge` of this leaf's subtree.
     static Node *ownerOf(Node *leaf, Edge edge);
     void collect(Node *node, int half, QVector<Placement> &out) const;
+
+    static QJsonObject nodeToJson(const Node *node);
+    // Null with `*malformed` false: the whole subtree was rejected, and the
+    // caller collapses around the gap. Null with it set: unparsable JSON.
+    static std::unique_ptr<Node> nodeFromJson(const QJsonObject &obj, Node *parent,
+                                              const std::function<bool(quintptr)> &accept,
+                                              QHash<quintptr, Node *> *index, bool *malformed);
 
     std::unique_ptr<Node> m_root;
     QHash<quintptr, Node *> m_index;

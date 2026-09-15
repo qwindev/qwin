@@ -20,15 +20,16 @@ qt_add_executable(qwin
     src/systemapi.cpp src/systemapi.h
     src/colorpalette.cpp src/colorpalette.h
     src/panelwindow.cpp src/panelwindow.h
-    src/virtualdesktops.cpp src/virtualdesktops.h
     src/hotkey.cpp src/hotkey.h
     src/wifiapi.cpp src/wifiapi.h
     src/windowfocus.cpp src/windowfocus.h
+    src/windowhider.cpp src/windowhider.h
     src/mediaapi.cpp src/mediaapi.h
     src/audioapi.cpp src/audioapi.h
     src/foregroundwindow.cpp src/foregroundwindow.h
     src/layouttree.cpp src/layouttree.h
     src/tilingapi.cpp src/tilingapi.h
+    src/tilingstate.cpp src/tilingstate.h
     src/powerapi.cpp src/powerapi.h
     src/bluetoothapi.cpp src/bluetoothapi.h
     src/appsapi.cpp src/appsapi.h
@@ -36,10 +37,12 @@ qt_add_executable(qwin
 
 # Qt6::Widgets: QSystemTrayIcon
 # shell32: SHAppBarMessage (PanelWindow), the AppsFolder namespace (Apps)
-# dwmapi: DwmGetWindowAttribute, the cloaked-window test (windowfocus)
+# dwmapi: DwmGetWindowAttribute, the cloaked-window test (windowfocus,
+#   windowhider) and DWMWA_CLOAKED itself (windowhider)
 # wlanapi: Native WiFi (Wifi)
 # windowsapp: WinRT umbrella lib for GSMTC (Media)
-# ole32: MMDevice/AudioEndpointVolume COM (Audio)
+# ole32: MMDevice/AudioEndpointVolume COM (Audio); ImmersiveShell and
+#   IVirtualDesktopManager COM (windowhider)
 # version: GetFileVersionInfo, for an exe's FileDescription (ActiveWindow)
 # powrprof: GetPwrCapabilities/SetSuspendState (Power)
 # bthprops + setupapi: device enumeration and the BLE battery property
@@ -51,9 +54,3 @@ target_compile_definitions(qwin PRIVATE QWIN_VERSION_STR="${PROJECT_VERSION}")
 
 # Hide the console window on release builds.
 set_target_properties(qwin PROPERTIES WIN32_EXECUTABLE $<CONFIG:Release>)
-
-# virtualdesktops.cpp loads this from the exe directory at runtime.
-add_custom_command(TARGET qwin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        ${CMAKE_SOURCE_DIR}/third_party/VirtualDesktopAccessor.dll
-        $<TARGET_FILE_DIR:qwin>)

@@ -7,7 +7,7 @@ import Qwin
 ```
 
 Singletons: [`System`](#system) · [`Plugins`](#plugins-registry--config) ·
-[`Colors`](#colors-theming) · [`Desktops`](#desktops-virtual-desktops) ·
+[`Colors`](#colors-theming) ·
 [`Tiler`](#tiler-window-tiling) · [`Wifi`](#wifi) · [`Media`](#media-now-playing) ·
 [`Audio`](#audio-volume--output-devices) · [`ActiveWindow`](#activewindow-focused-window) ·
 [`Power`](#power) · [`Bluetooth`](#bluetooth) · [`Apps`](#apps-installed-apps)
@@ -111,7 +111,7 @@ API — it fires no matter which application has focus, unlike QtQuick's
 ```qml
 Hotkey {
     sequence: "Shift+Alt+1"        // modifiers + one key, Qt shortcut syntax
-    onActivated: Desktops.switchTo(0)
+    onActivated: Tiler.switchToWorkspace(0)
 }
 ```
 
@@ -159,48 +159,41 @@ PanelWindow {
 - The reservation is released automatically when the plugin is removed,
   hot-reloaded, or the app quits.
 
-## Desktops (virtual desktops)
-
-| Member | Description |
-|---|---|
-| `Desktops.available` | `VirtualDesktopAccessor.dll` loaded next to the exe (constant). When `false`, `count` stays 1 and the calls are warning no-ops. |
-| `Desktops.count` | Number of virtual desktops. |
-| `Desktops.currentIndex` | Index of the active desktop (0-based). |
-| `Desktops.switchTo(index)` | Switch to the given desktop. |
-| `Desktops.createDesktop()` | Create a new desktop and switch to it. |
-| `Desktops.closeCurrentDesktop()` | Close the active desktop (refuses on the last one). |
-| `Desktops.moveForegroundWindowToNewDesktop()` | Send the focused application window to a fresh desktop, switch to it and maximize the window (skips plugin/shell windows; respects windows that forbid maximizing). Bind it to a `Hotkey` — a chord press doesn't move focus, so the foreground window is the one the user was in. |
-
-Both properties notify through the `changed` signal, so bindings update
-automatically (including when desktops are created/removed or switched
-outside the plugin). Windows has no public virtual-desktop API; everything
-goes through [VirtualDesktopAccessor.dll](https://github.com/Ciantic/VirtualDesktopAccessor)
-(MIT, bundled in `third_party/` and copied next to the exe at build time),
-which wraps the undocumented COM interfaces. Switches — including external
-ones (Win+Ctrl+Arrow, Task View) — are picked up instantly via the DLL's
-notification hook; desktop creation/removal is caught by a 1 s poll.
-
 ## Tiler (window tiling)
 
-A dwindle tiling window manager over the desktop's own windows: each new
-window splits the focused one along its longer side, per monitor and per
-virtual desktop. Dragging an inner edge rewrites the split behind it, a
-title-bar drag onto another tile swaps the two, and fixed-size dialogs are
-never tiled. Windows that keep refusing their assigned rect are floated
-rather than fought with.
+A dwindle tiling window manager over the desktop's own windows, with
+per-monitor **workspaces** layered on top: each new window splits the
+focused one along its longer side, dragging an inner edge rewrites the
+split behind it, a title-bar drag onto another tile swaps the two, and
+fixed-size dialogs are never tiled. Windows that keep refusing their
+assigned rect are floated rather than fought with.
 
-The layout state lives in C++ and survives hot reloads — a plugin (see
-`plugins/tiling`) only pushes config in and binds `Hotkey` chords to
-the commands.
+Workspaces are internal to the tiler, not the OS. Switching one hides its
+previous members and shows the new ones by **cloaking** them — the same
+undocumented shell mechanism Windows itself uses to park a window on
+another virtual desktop, so a cloaked window disappears from the screen
+without being minimized or dropped from Alt+Tab the way minimizing it
+would. Native virtual desktops keep working underneath and are left alone:
+the tiler only ever discovers and manages windows on the current one.
+
+The layout and workspace state live in C++ and survive hot reloads — a
+plugin (see `plugins/tiling`) only pushes config in and binds `Hotkey`
+chords to the commands; `plugins/workspaces` is the bar-facing switcher.
 
 | Member | Description |
 |---|---|
-| `Tiler.enabled` | Read/write master switch. Disabling restores every window's pre-adoption geometry. |
+| `Tiler.enabled` | Read/write master switch. Disabling shows every hidden window, releases every managed window (restoring its pre-adoption geometry) and deletes the state file. |
 | `Tiler.gap` / `Tiler.outerGap` | Gap between tiles / to the work-area edge, logical px. |
 | `Tiler.minWidth` / `Tiler.minHeight` | Smallest tile a split may create, logical px. A window that cannot be placed without breaking these stays floating and is reclaimed once room frees up. |
 | `Tiler.resizeStep` | How far one `resize()` call moves a divider, logical px. |
 | `Tiler.floatProcesses` | Executable names (`"spotify.exe"`, case-insensitive) that are never tiled. |
-| `Tiler.managedCount` | Number of currently tiled windows (`layoutChanged`). |
+| `Tiler.workspaceCount` | Workspaces per monitor, 1–20 (default 9). |
+| `Tiler.hideMethod` | `"cloak"` (default) or `"minimize"` — how an inactive workspace's windows are hidden. See the hiding notes below for the automatic fallback. |
+| `Tiler.cloakAvailable` | Whether the cloaking COM interface is up. `false` means every hide uses minimize regardless of `hideMethod`. Acquisition is lazy and retried, so this can change — notifies through `cloakAvailableChanged`. |
+| `Tiler.pinnedTopmost` | Whether a pinned window is also kept above the active workspace's windows (`HWND_TOPMOST`) rather than just following it around. |
+| `Tiler.currentWorkspace` | Active workspace index (0-based) on the focused monitor. |
+| `Tiler.workspaces` | The focused monitor's workspaces: `[{ index, active, windows }]`, where `windows` is the member count. |
+| `Tiler.managedCount` | Number of currently tiled, visible windows (`layoutChanged`). |
 | `Tiler.debug` | Log every adoption and every rect applied. Off by default: it is one line per window per re-tile. |
 | `Tiler.focusDirection(dir)` | Focus the neighbouring window: `"left"`, `"right"`, `"up"`, `"down"`. |
 | `Tiler.moveDirection(dir)` | Swap the focused window with its neighbour in that direction. |
@@ -209,6 +202,56 @@ the commands.
 | `Tiler.toggleSplit()` | Flip the split that placed the focused window — the one-key fix for a dwindle that divided the wrong way. |
 | `Tiler.equalize()` | Forget every resize on the focused window's monitor. |
 | `Tiler.retile()` | Re-apply the layout now. |
+| `Tiler.switchToWorkspace(index)` | Switch the focused monitor to the given workspace (0-based): shows its members first, then hides the previous workspace's non-pinned members — no empty-desktop flash in between. |
+| `Tiler.moveToWorkspace(index, follow = false)` | Move the foreground window to the given workspace on its own monitor; `follow` also switches that monitor to it. |
+| `Tiler.moveToEmptyWorkspace()` | Move the foreground window to the lowest-numbered workspace on its monitor that has no windows, and follow it there. Its own workspace counts as occupied, so a window alone on one lands on the next free slot rather than staying put. A warning no-op when every workspace is in use. Hyprland's `movetoworkspace, empty`. |
+| `Tiler.togglePinned()` | Pin or unpin the foreground window. A pinned window floats and stays visible on every workspace of its monitor (subject to `pinnedTopmost`) instead of hiding when the workspace switches. |
+
+The **focused monitor** — what `currentWorkspace`, `workspaces`,
+`switchToWorkspace()` and the plain (non-`follow`) `moveToWorkspace()` act
+on — is the monitor of the foreground window when that window is managed,
+else the monitor under the cursor.
+
+A window with no `WS_THICKFRAME` (a fixed-size dialog, an installer, a
+splash) always floats rather than tiling — otherwise dialogs would bleed
+across workspaces. Everything else on the current native desktop is
+managed, and `floatProcesses` is the one way to exempt an application from
+the layout.
+
+**Hiding**: cloaking is invisible-but-present, which is why it's the
+default — the window keeps its place in Alt+Tab and its taskbar button.
+When `SetCloak` keeps failing for a specific window (three times), that
+window falls back to minimize for the rest of the session; when the
+cloaking COM interface never came up at all (`cloakAvailable == false`),
+every hide uses minimize from the start. The tiler never uncloaks a window
+it did not cloak itself, so windows the OS itself cloaks — for another
+native virtual desktop, or a dormant UWP host — are left untouched.
+
+**State and recovery**: the tiler writes `%APPDATA%\Qwin\tiling-state.json`
+before every hide/show batch (so a forced kill mid-switch can never leave
+the file claiming a window is visible when it's actually cloaked) and on a
+short debounce after other layout changes. There is no crash handler and
+nothing runs at the moment a crash happens — recovery is entirely a startup
+affair. On the *next* launch, `TilingApi`'s constructor reads the file back,
+matches each entry to a live window by PID, process creation time and
+window class (never the raw HWND, which Windows can recycle), and
+reconciles that window's hidden/visible state to what its recovered
+workspace and active-workspace map imply — a forced kill is recovered from
+on the next launch, not at the moment it happens. A missing or unparseable
+file is simply logged. A wrong-version or clearly stale (boot-time mismatch)
+one is not rebuilt from — but it is still read far enough to un-hide every
+window it names that passes the identity check, since otherwise a file the
+tiler refuses to trust would be the one thing that could strand a window
+cloaked. A structurally broken one
+(a workspace tree or window list that doesn't add up) is abandoned the same
+way — everything it named that was hidden is shown again, and the file is
+deleted rather than trusted a second time.
+Recovered windows are held pending until the plugin's own `enabled` binding
+switches the tiler on, so a profile that starts with tiling disabled can
+never leave one stranded cloaked — a 5 s timeout shows and forgets them if
+that never happens. A clean exit (tray Quit — killing the process directly
+skips this) shows and un-topmosts everything the tiler hid and deletes the
+file, since there is then nothing left to recover.
 
 ## Wifi
 

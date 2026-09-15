@@ -80,8 +80,7 @@ QString idOf(IMMDevice *dev)
 }
 
 // A genuine cross-thread COM callback: it fires on a thread the audio engine
-// owns, unlike VirtualDesktops' WndProc, which Qt's own loop dispatches on
-// the main thread. So it must marshal before touching AudioApi state or
+// owns, not on ours, so it must marshal before touching AudioApi state or
 // emitting. AudioApi is the invokeMethod context object, so a queued call
 // no-ops if AudioApi dies before the notification is delivered.
 class EndpointVolumeCallback : public IAudioEndpointVolumeCallback
