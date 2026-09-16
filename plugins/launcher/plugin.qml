@@ -165,6 +165,7 @@ Window {
 
     Hotkey {
         sequence: win.hotkeySequence
+        description: "Show link launcher"
         onActivated: win.visible ? win.hide() : win.summon()
     }
 

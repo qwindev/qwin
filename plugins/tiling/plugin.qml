@@ -52,24 +52,24 @@ Service {
     // Alt+Left/Right is browser back/forward, and a global chord wins over
     // the focused app - the tiler would eat it everywhere.
     readonly property var bindings: [
-        { seq: chord("focusLeft",      "Alt+H"),       action: "focus",  arg: "left"  },
-        { seq: chord("focusDown",      "Alt+J"),       action: "focus",  arg: "down"  },
-        { seq: chord("focusUp",        "Alt+K"),       action: "focus",  arg: "up"    },
-        { seq: chord("focusRight",     "Alt+L"),       action: "focus",  arg: "right" },
-        { seq: chord("moveLeft",       "Shift+Alt+H"), action: "move",   arg: "left"  },
-        { seq: chord("moveDown",       "Shift+Alt+J"), action: "move",   arg: "down"  },
-        { seq: chord("moveUp",         "Shift+Alt+K"), action: "move",   arg: "up"    },
-        { seq: chord("moveRight",      "Shift+Alt+L"), action: "move",   arg: "right" },
-        { seq: chord("shrinkWidth",    "Ctrl+Alt+H"),  action: "resize", arg: "narrower" },
-        { seq: chord("growHeight",     "Ctrl+Alt+J"),  action: "resize", arg: "taller"   },
-        { seq: chord("shrinkHeight",   "Ctrl+Alt+K"),  action: "resize", arg: "shorter"  },
-        { seq: chord("growWidth",      "Ctrl+Alt+L"),  action: "resize", arg: "wider"    },
-        { seq: chord("toggleFloating", "Shift+Alt+F"), action: "float"    },
-        { seq: chord("toggleSplit",    "Shift+Alt+V"), action: "split"    },
-        { seq: chord("equalize",       "Shift+Alt+E"), action: "equalize" },
-        { seq: chord("toggleTiling",   "Shift+Alt+T"), action: "toggle"   },
-        { seq: chord("togglePinned",   "Shift+Alt+P"), action: "pin"      },
-        { seq: chord("moveToEmptyWorkspace", "Shift+Alt+M"), action: "moveToEmpty" }
+        { seq: chord("focusLeft",      "Alt+H"),       action: "focus",  arg: "left",     desc: "Focus window left"      },
+        { seq: chord("focusDown",      "Alt+J"),       action: "focus",  arg: "down",     desc: "Focus window down"      },
+        { seq: chord("focusUp",        "Alt+K"),       action: "focus",  arg: "up",       desc: "Focus window up"        },
+        { seq: chord("focusRight",     "Alt+L"),       action: "focus",  arg: "right",    desc: "Focus window right"     },
+        { seq: chord("moveLeft",       "Shift+Alt+H"), action: "move",   arg: "left",     desc: "Move window left"       },
+        { seq: chord("moveDown",       "Shift+Alt+J"), action: "move",   arg: "down",     desc: "Move window down"       },
+        { seq: chord("moveUp",         "Shift+Alt+K"), action: "move",   arg: "up",       desc: "Move window up"         },
+        { seq: chord("moveRight",      "Shift+Alt+L"), action: "move",   arg: "right",    desc: "Move window right"      },
+        { seq: chord("shrinkWidth",    "Ctrl+Alt+H"),  action: "resize", arg: "narrower", desc: "Shrink width"           },
+        { seq: chord("growHeight",     "Ctrl+Alt+J"),  action: "resize", arg: "taller",   desc: "Grow height"            },
+        { seq: chord("shrinkHeight",   "Ctrl+Alt+K"),  action: "resize", arg: "shorter",  desc: "Shrink height"          },
+        { seq: chord("growWidth",      "Ctrl+Alt+L"),  action: "resize", arg: "wider",    desc: "Grow width"             },
+        { seq: chord("toggleFloating", "Shift+Alt+F"), action: "float",                   desc: "Toggle floating"        },
+        { seq: chord("toggleSplit",    "Shift+Alt+V"), action: "split",                   desc: "Toggle split direction" },
+        { seq: chord("equalize",       "Shift+Alt+E"), action: "equalize",                desc: "Equalize splits"        },
+        { seq: chord("toggleTiling",   "Shift+Alt+T"), action: "toggle",                  desc: "Toggle tiling"          },
+        { seq: chord("togglePinned",   "Shift+Alt+P"), action: "pin",                     desc: "Toggle pinned"          },
+        { seq: chord("moveToEmptyWorkspace", "Shift+Alt+M"), action: "moveToEmpty",       desc: "Move window to empty workspace" }
     ]
 
     // A name and a switch rather than a closure per row: the model is data,
@@ -112,6 +112,7 @@ Service {
         Hotkey {
             required property var modelData
             sequence: modelData.seq
+            description: modelData.desc
             onActivated: tiling.run(modelData.action, modelData.arg)
         }
     }
@@ -126,6 +127,7 @@ Service {
             // index goes -1 while the Instantiator tears an item down; an
             // empty sequence stops it re-registering on a stale number.
             sequence: index >= 0 ? tiling.chord("switchWorkspace", "Shift+Alt+{n}").replace("{n}", index + 1) : ""
+            description: index >= 0 ? "Switch to workspace " + (index + 1) : ""
             onActivated: Tiler.switchToWorkspace(index)
         }
     }
@@ -140,6 +142,7 @@ Service {
         Hotkey {
             required property int index
             sequence: index >= 0 ? tiling.chord("moveToWorkspace", "Ctrl+Alt+{n}").replace("{n}", index + 1) : ""
+            description: index >= 0 ? "Move window to workspace " + (index + 1) : ""
             onActivated: Tiler.moveToWorkspace(index)
         }
     }

@@ -19,6 +19,7 @@
 #include "colorpalette.h"
 #include "foregroundwindow.h"
 #include "hotkey.h"
+#include "hotkeysapi.h"
 #include "mediaapi.h"
 #include "panelwindow.h"
 #include "powerapi.h"
@@ -142,11 +143,13 @@ int main(int argc, char *argv[])
     AppsApi apps;
     TilingApi tiling;
     PluginRegistry registry(pluginsDir);
+    HotkeysApi hotkeys([&registry](const QString &file) { return registry.nameForFile(file); });
 
     const auto registerQmlTypes = [&] {
         qmlRegisterSingletonInstance("Qwin", 1, 0, "System", &systemApi);
         qmlRegisterType<PanelWindow>("Qwin", 1, 0, "PanelWindow");
         qmlRegisterType<Hotkey>("Qwin", 1, 0, "Hotkey");
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Hotkeys", &hotkeys);
         qmlRegisterType<Service>("Qwin", 1, 0, "Service");
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Colors", &colors);
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Wifi", &wifi);

@@ -10,7 +10,8 @@ Singletons: [`System`](#system) · [`Plugins`](#plugins-registry--config) ·
 [`Colors`](#colors-theming) ·
 [`Tiler`](#tiler-window-tiling) · [`Wifi`](#wifi) · [`Media`](#media-now-playing) ·
 [`Audio`](#audio-volume--output-devices) · [`ActiveWindow`](#activewindow-focused-window) ·
-[`Power`](#power) · [`Bluetooth`](#bluetooth) · [`Apps`](#apps-installed-apps)
+[`Power`](#power) · [`Bluetooth`](#bluetooth) · [`Apps`](#apps-installed-apps) ·
+[`Hotkeys`](#hotkeys-hotkey-listing)
 
 Types: [`Hotkey`](#hotkey-global-hotkeys) · [`PanelWindow`](#panelwindow-taskbar-style-panels) ·
 [`Service`](#service-windowless-plugins)
@@ -126,6 +127,7 @@ Hotkey {
 | `sequence` | The chord, e.g. `"Shift+Alt+1"`, `"Ctrl+F9"`, `"Meta+Space"`. Modifiers: `Ctrl`, `Alt`, `Shift`, `Meta` (the Windows key); one main key (letter, digit, F1–F24, arrows, and other common keys). |
 | `enabled` | Set to `false` to release the chord without removing the declaration (default `true`). |
 | `registered` | Read-only: whether the OS registration succeeded. |
+| `description` | Free text describing what the chord does. No effect on registration — purely for a listing like the bundled `hotkeys` plugin. |
 | `activated()` | Emitted on every press of the chord (once per press, no auto-repeat). |
 
 - The chord is grabbed **exclusively** while registered: the focused
@@ -136,6 +138,37 @@ Hotkey {
   plugin itself keeps working.
 - The registration is released automatically when the plugin is removed,
   hot-reloaded, or the app quits.
+
+## Hotkeys (hotkey listing)
+
+A snapshot of every `Hotkey` currently declared anywhere in the loaded
+plugins:
+
+```qml
+function summon() {
+    entries = Hotkeys.list()
+    // ...
+}
+```
+
+`Hotkeys.list()` returns an array of `{sequence, plugin, description,
+registered}`, sorted by `plugin` then by `sequence` (both case-insensitive).
+`sequence` is the display form of the chord, with `Meta` shown as `Win`;
+`plugin` is the name of the plugin whose *folder* declared the `Hotkey` (an
+embedded bar module reports its own name, not `bar`); `registered: false`
+means the chord was taken by another application or could not be parsed —
+the log has the detail in either case.
+
+It is a **snapshot, not a live list** — call it when you need it, e.g. when
+an overlay opens, rather than binding to it. There is deliberately no change
+signal: a hot reload destroys and recreates every `Hotkey` at once, and a
+caller that reads on open never sees that churn. Disabled hotkeys and ones
+with an empty `sequence` (a `Hotkey` an `Instantiator` is mid-teardown on)
+are omitted.
+
+The bundled `hotkeys` plugin is a cheat sheet built entirely on this: a
+hotkey (default `Shift+Alt+/`) summons a filterable, grouped-by-plugin list
+of everything `Hotkeys.list()` returns.
 
 ## PanelWindow (taskbar-style panels)
 

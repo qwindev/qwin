@@ -250,6 +250,18 @@ QString PluginRegistry::nameForEntry(const QString &entryFile) const
     return m_entryToName.value(entryFile);
 }
 
+QString PluginRegistry::nameForFile(const QString &filePath) const
+{
+    if (filePath.isEmpty())
+        return QString();
+    for (auto it = m_plugins.constBegin(); it != m_plugins.constEnd(); ++it) {
+        const QString folder = QFileInfo(it.value().entryFile).absolutePath() + QLatin1Char('/');
+        if (filePath.startsWith(folder, Qt::CaseInsensitive))
+            return it.value().name;
+    }
+    return QString();
+}
+
 bool PluginRegistry::isEnabled(const QString &name) const
 {
     return m_enabled.contains(normalized(name));

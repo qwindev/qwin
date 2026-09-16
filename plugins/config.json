@@ -1,5 +1,5 @@
 {
-    "enabled": ["bar", "launcher", "run", "tiling"],
+    "enabled": ["bar", "launcher", "run", "tiling", "hotkeys"],
 
     "theme": {
         "fontFamily": "Cascadia Code"
@@ -63,6 +63,12 @@
         "top": 0.3,
         "includeDesktop": true,
         "showSubtitle": false
+    },
+
+    "hotkeys": {
+        "hotkey": "Shift+Alt+/",
+        "width": 560,
+        "top": 0.2
     },
 
     "clock": {

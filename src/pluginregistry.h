@@ -42,6 +42,10 @@ public:
     QStringList enabledNames() const { return m_enabled; }
     QString entryFile(const QString &name) const;
     QString nameForEntry(const QString &entryFile) const;
+    // Name of the registered plugin whose folder contains filePath, or empty
+    // if none. Folder-based rather than nameForEntry: a Hotkey (or anything
+    // else) can be declared in a non-entry .qml inside the plugin folder.
+    QString nameForFile(const QString &filePath) const;
     bool isEnabled(const QString &name) const;
     // Name appears in another plugin's config section, i.e. is embedded, so
     // a change to it must reload the embedders too.

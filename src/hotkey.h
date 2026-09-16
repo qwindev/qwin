@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QList>
 #include <QObject>
 #include <QQmlParserStatus>
 #include <QString>
@@ -15,6 +16,7 @@ class Hotkey : public QObject, public QQmlParserStatus
     Q_PROPERTY(QString sequence READ sequence WRITE setSequence NOTIFY sequenceChanged)
     Q_PROPERTY(bool enabled READ enabled WRITE setEnabled NOTIFY enabledChanged)
     Q_PROPERTY(bool registered READ registered NOTIFY registeredChanged)
+    Q_PROPERTY(QString description READ description WRITE setDescription NOTIFY descriptionChanged)
 public:
     explicit Hotkey(QObject *parent = nullptr);
     ~Hotkey() override;
@@ -27,6 +29,21 @@ public:
 
     bool registered() const { return m_registered; }
 
+    QString description() const { return m_description; }
+    void setDescription(const QString &description);
+
+    // Local path of the QML file that declared this Hotkey, captured in
+    // componentComplete() from the qmlContext's base URL - toLocalFile()
+    // drops the "?reload=N" query the plugin manager adds, and baseUrl()
+    // walks up to parent contexts, so Instantiator delegates and
+    // Loader-embedded modules resolve to the file that declared them.
+    QString sourceFile() const { return m_sourceFile; }
+
+    // Every live Hotkey that has completed, regardless of enabled/registered
+    // state - used by Hotkeys.list() to show chords the OS refused, which
+    // never make it into the dispatcher's id -> Hotkey hash.
+    static QList<Hotkey *> instances();
+
     void classBegin() override {}
     void componentComplete() override;
 
@@ -37,12 +54,15 @@ signals:
     void sequenceChanged();
     void enabledChanged();
     void registeredChanged();
+    void descriptionChanged();
 
 private:
     void update();
     void unregister();
 
     QString m_sequence;
+    QString m_description;
+    QString m_sourceFile;
     bool m_enabled = true;
     bool m_registered = false;
     bool m_complete = false;

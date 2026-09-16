@@ -118,6 +118,7 @@ Window {
 
     Hotkey {
         sequence: win.hotkeySequence
+        description: "Search and run apps"
         onActivated: win.visible ? win.hide() : win.summon()
     }
 

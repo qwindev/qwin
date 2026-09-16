@@ -5,6 +5,8 @@
 #include <QDebug>
 #include <QHash>
 #include <QKeySequence>
+#include <QQmlContext>
+#include <QQmlEngine>
 
 #include <windows.h>
 
@@ -21,6 +23,10 @@ class HotkeyDispatcher : public QAbstractNativeEventFilter
 {
 public:
     QHash<int, Hotkey *> hotkeys;
+    // Every live, completed Hotkey - unlike `hotkeys` above, this also holds
+    // ones whose registration failed (chord taken, or unparseable), so the
+    // listing API can report them instead of silently dropping them.
+    QList<Hotkey *> live;
     int nextId = 1; // application RegisterHotKey ids may use 0x0000..0xBFFF
 
     bool nativeEventFilter(const QByteArray &eventType, void *message, qintptr *) override
@@ -82,6 +88,7 @@ UINT toVirtualKey(Qt::Key key)
     case Qt::Key_Period: return VK_OEM_PERIOD;
     case Qt::Key_Plus: return VK_OEM_PLUS;
     case Qt::Key_Minus: return VK_OEM_MINUS;
+    case Qt::Key_Slash: return VK_OEM_2;
     default: return 0;
     }
 }
@@ -125,6 +132,7 @@ Hotkey::Hotkey(QObject *parent)
 Hotkey::~Hotkey()
 {
     unregister();
+    dispatcher()->live.removeOne(this);
 }
 
 void Hotkey::setSequence(const QString &sequence)
@@ -145,9 +153,25 @@ void Hotkey::setEnabled(bool enabled)
     update();
 }
 
+void Hotkey::setDescription(const QString &description)
+{
+    if (m_description == description)
+        return;
+    m_description = description;
+    emit descriptionChanged();
+}
+
+QList<Hotkey *> Hotkey::instances()
+{
+    return dispatcher()->live;
+}
+
 void Hotkey::componentComplete()
 {
     m_complete = true;
+    QQmlContext *ctx = qmlContext(this);
+    m_sourceFile = ctx ? ctx->baseUrl().toLocalFile() : QString();
+    dispatcher()->live.append(this);
     update();
 }
 
