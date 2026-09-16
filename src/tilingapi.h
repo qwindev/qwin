@@ -21,7 +21,7 @@ class QScreen;
 // native virtual desktops. Switching a workspace is not a desktop switch: it
 // cloaks (or minimizes, as a fallback - see windowhider.h) every member of
 // the one being left and uncloaks the one being shown. `layouttree.*` holds
-// the geometry and knows nothing of Windows or workspaces; this file holds
+// the geometry and knows nothing of Windows or workspaces; this unit holds
 // everything native. HWNDs travel as quintptr, as a tree's leaf keys do; one
 // tree per "device|workspace", holding its TILED members only.
 //
@@ -46,6 +46,12 @@ class QScreen;
 //     adopted floating and never enter the layout at all; this catches the
 //     ones with a sizing border that still refuse, which would otherwise
 //     flicker every sweep.
+//
+// Member definitions are split by concern: tilingapi.cpp (lifecycle, most
+// properties, discovery, layout, the window commands),
+// tilingapi_workspaces.cpp (workspace properties and commands, pinning,
+// hide/show) and tilingapi_recovery.cpp (the state file, crash recovery).
+// tilingapi_p.h holds the helpers more than one of them needs.
 class TilingApi : public QObject
 {
     Q_OBJECT
@@ -180,7 +186,7 @@ signals:
     void pinnedTopmostChanged();
 
 public:
-    // Entry points for the .cpp's WinEvent callback, routed through a
+    // Entry points for tilingapi.cpp's WinEvent callback, routed through a
     // file-static instance pointer (main.cpp constructs exactly one).
     // WINEVENT_OUTOFCONTEXT hooks are pumped by our own message loop, so
     // these run on the GUI thread and may touch state directly. Plain
@@ -284,7 +290,8 @@ private:
     // window has already refused it three times.
     hider::Method effectiveHideMethod(const Managed &m) const;
     // Emits workspacesChanged() only when the focused monitor's workspace
-    // list would actually read differently; see the .cpp for why it is gated.
+    // list would actually read differently; see tilingapi.cpp for why it is
+    // gated.
     void notifyWorkspacesIfChanged();
     // Hides `id` and records how. A cloak failure bumps hideFailures and
     // falls back to Minimize for this call. No-op if already hidden.

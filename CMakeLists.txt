@@ -30,6 +30,7 @@ qt_add_executable(qwin
     src/foregroundwindow.cpp src/foregroundwindow.h
     src/layouttree.cpp src/layouttree.h
     src/tilingapi.cpp src/tilingapi.h
+    src/tilingapi_workspaces.cpp src/tilingapi_recovery.cpp src/tilingapi_p.h
     src/tilingstate.cpp src/tilingstate.h
     src/powerapi.cpp src/powerapi.h
     src/bluetoothapi.cpp src/bluetoothapi.h

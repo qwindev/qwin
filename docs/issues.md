@@ -1,10 +1,12 @@
-New, most severe first
+3. System has become a catch-all. It holds CPU/RAM, six battery properties, the sandboxed file read, the Start menu, and the focus bracket (rememberFocus()/restoreFocus()). Every other hardware area got its own singleton with available, but battery is System.batteryAvailable. I'd move battery into Battery, or into Power, since Windows groups them. Renaming these breaks user plugins, so ship it as a feat!: rather than slipping it in.
 
-- A failed uncloak strands the window for good. showWindow at src/tilingapi.cpp:1670 ignores the return of the hider's show call and records the window as visible anyway. If explorer is mid-restart when you switch workspaces, the window stays cloaked, the next membership pass reads it as "the OS took it" and releases it, and from then on no state file, tray quit or recovery ever names it again. hideWindow already guards the symmetric case. Keep the hidden record on failure so the next switch or sweep retries.
-- A hidden window whose monitor unplugs can land hidden on an active workspace. The hidden branch at src/tilingapi.cpp:1261 migrates it to the surviving monitor keeping its index, but never reconciles. If that index is the survivor's active workspace, the window is recorded hidden on an active workspace, which every placement, sweep and switch skips. Only Alt+Tab or switching away and back recovers it. Show it after the migrate when the index is active.
-- A cross-monitor drag of the focused window leaves the focused monitor stale. The rescan migrate after a title-bar drag fires no foreground event, so m_focusedDevice still names the old monitor and the next switch chord acts on the wrong screen. This is the second half of the focused-monitor issue I reported; the fix is to update the device wherever the foreground window migrates.
-- Float decisions no longer survive a minimize. The float flag now lives on the managed entry, which releaseWindow erases. A user-floated or sweep-floated window that is minimized and restored comes back tiled, and a sweep-floated one re-runs the three flickering rejections. The old code kept a per-HWND set across release. Also, toggling float on an overflow window is now a no-op, where before it made the float sticky so the window stopped being reclaimed.
-- Recovered geometry is in the wrong coordinate space. A recovered entry's original is the placement's normal rect, which Windows reports in workspace coordinates, but every consumer hands it to SetWindowPos in screen coordinates. With the bar docked at the top, a post-recovery float toggle or disable places the window a bar height too high. placementShowCmd is saved and loaded but never read.
+Minor
+
+- Duplicated Win32 helpers: processCreationTime is in both tilingapi.cpp:87 and tilingstate.cpp:39, and the exe-path lookup is in both foregroundwindow.cpp:54 and tilingapi.cpp:1004. The comments say one copy was deliberate. With two duplicated pairs, a small win32util.* starts to pay for itself.
+- Services start whether or not anything uses them. The System timer, Wifi and Bluetooth polling, and the tiler's system-wide event hooks all run from main.cpp even when no loaded plugin reads them. Each costs little. If you care, connectNotify can start polling on the first binding.
+
+
+
 
 Lower priority, also verified
 
