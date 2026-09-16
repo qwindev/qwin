@@ -18,6 +18,7 @@ qt_add_executable(qwin
     src/pluginmanager.cpp src/pluginmanager.h
     src/pluginregistry.cpp src/pluginregistry.h
     src/systemapi.cpp src/systemapi.h
+    src/batteryapi.cpp src/batteryapi.h
     src/colorpalette.cpp src/colorpalette.h
     src/panelwindow.cpp src/panelwindow.h
     src/hotkey.cpp src/hotkey.h

@@ -7,20 +7,20 @@ import "../shared"
 // on a desktop - `shown` for the bar's Loader, `visible` for standalone use.
 Rectangle {
     id: batteryItem
-    property bool shown: System.batteryAvailable
+    property bool shown: Battery.available
     visible: shown
 
     // Charging always reads accent: the cable being in matters more than the
     // level. On battery the fill warns near empty, readable from the bar.
-    readonly property color glyphColor: System.batteryCharging ? Colors.accent
-                                       : (System.batteryPercent >= 0 && System.batteryPercent <= 10) ? Colors.error
-                                       : (System.batteryPercent >= 0 && System.batteryPercent <= 20) ? Colors.warning
+    readonly property color glyphColor: Battery.charging ? Colors.accent
+                                       : (Battery.percent >= 0 && Battery.percent <= 10) ? Colors.error
+                                       : (Battery.percent >= 0 && Battery.percent <= 20) ? Colors.warning
                                        : Colors.text
 
     // A constant 4 characters ("  --", " 5%", "100%"), so the bar does not
     // reflow at a digit boundary.
     function percentText() {
-        return (System.batteryPercent < 0 ? "--" : (System.batteryPercent + "%")).padStart(4)
+        return (Battery.percent < 0 ? "--" : (Battery.percent + "%")).padStart(4)
     }
 
     function timeText(seconds) {
@@ -42,7 +42,7 @@ Rectangle {
     SequentialAnimation {
         id: pulseAnim
         loops: Animation.Infinite
-        running: System.batteryPercent >= 0 && System.batteryPercent <= 10 && !System.acPower
+        running: Battery.percent >= 0 && Battery.percent <= 10 && !Battery.acPower
         onRunningChanged: if (!running) batteryItem.opacity = 1
         NumberAnimation { target: batteryItem; property: "opacity"; to: 0.4; duration: 700; easing.type: Easing.InOutQuad }
         NumberAnimation { target: batteryItem; property: "opacity"; to: 1.0; duration: 700; easing.type: Easing.InOutQuad }
@@ -162,8 +162,8 @@ Rectangle {
 
         BatteryGlyph {
             anchors.verticalCenter: parent.verticalCenter
-            percent: System.batteryPercent < 0 ? 0 : System.batteryPercent
-            charging: System.batteryCharging
+            percent: Battery.percent < 0 ? 0 : Battery.percent
+            charging: Battery.charging
             fillColor: batteryItem.glyphColor
             outlineColor: Qt.alpha(Colors.textMuted, 0.6)
             boltColor: Colors.background
@@ -199,7 +199,7 @@ Rectangle {
             spacing: 12
 
             Text {
-                text: System.batteryPercent < 0 ? "--" : (System.batteryPercent + "%")
+                text: Battery.percent < 0 ? "--" : (Battery.percent + "%")
                 color: Colors.text
                 font.family: Theme.fontFamily
                 font.pixelSize: 22
@@ -207,23 +207,23 @@ Rectangle {
             }
 
             Text {
-                text: System.batteryCharging ? "Charging"
-                    : (System.acPower ? "Plugged in, fully charged" : "On battery")
+                text: Battery.charging ? "Charging"
+                    : (Battery.acPower ? "Plugged in, fully charged" : "On battery")
                 color: Colors.textMuted
                 font.family: Theme.fontFamily
                 font.pixelSize: 13
             }
 
             Text {
-                visible: System.batteryTimeLeft >= 0
-                text: batteryItem.timeText(System.batteryTimeLeft)
+                visible: Battery.timeLeft >= 0
+                text: batteryItem.timeText(Battery.timeLeft)
                 color: Colors.textMuted
                 font.family: Theme.fontFamily
                 font.pixelSize: 12
             }
 
             Text {
-                visible: System.batterySaver
+                visible: Battery.saver
                 text: "Battery saver on"
                 color: Colors.warning
                 font.family: Theme.fontFamily

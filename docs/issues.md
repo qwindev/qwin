@@ -1,5 +1,3 @@
-3. System has become a catch-all. It holds CPU/RAM, six battery properties, the sandboxed file read, the Start menu, and the focus bracket (rememberFocus()/restoreFocus()). Every other hardware area got its own singleton with available, but battery is System.batteryAvailable. I'd move battery into Battery, or into Power, since Windows groups them. Renaming these breaks user plugins, so ship it as a feat!: rather than slipping it in.
-
 Minor
 
 - Duplicated Win32 helpers: processCreationTime is in both tilingapi.cpp:87 and tilingstate.cpp:39, and the exe-path lookup is in both foregroundwindow.cpp:54 and tilingapi.cpp:1004. The comments say one copy was deliberate. With two duplicated pairs, a small win32util.* starts to pay for itself.

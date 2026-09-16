@@ -10,7 +10,7 @@ Singletons: [`System`](#system) · [`Plugins`](#plugins-registry--config) ·
 [`Colors`](#colors-theming) ·
 [`Tiler`](#tiler-window-tiling) · [`Wifi`](#wifi) · [`Media`](#media-now-playing) ·
 [`Audio`](#audio-volume--output-devices) · [`ActiveWindow`](#activewindow-focused-window) ·
-[`Power`](#power) · [`Bluetooth`](#bluetooth) · [`Apps`](#apps-installed-apps) ·
+[`Battery`](#battery) · [`Power`](#power) · [`Bluetooth`](#bluetooth) · [`Apps`](#apps-installed-apps) ·
 [`Hotkeys`](#hotkeys-hotkey-listing)
 
 Types: [`Hotkey`](#hotkey-global-hotkeys) · [`PanelWindow`](#panelwindow-taskbar-style-panels) ·
@@ -28,17 +28,6 @@ Plus the [shared components](#shared-components) in `<plugins-dir>\shared\`.
 | `System.readTextFile(path)` | Returns the file content as a string. Relative paths resolve against the plugins directory; paths escaping the plugins directory (after canonicalization) are rejected and return `""`. |
 | `System.openStartMenu()` | Opens the Windows Start menu, or closes it again — it toggles, like the key it synthesizes (Ctrl+Esc). |
 | `System.rememberFocus()` / `System.restoreFocus()` | Focus bracket for overlays and popups: call `rememberFocus()` before taking the keyboard (showing a popup or overlay), `restoreFocus()` after hiding, so the window the user was working in gets the keyboard back. `shared/Popup.qml` and the bundled `run`/`launcher` overlays use it. |
-| `System.batteryAvailable` | Whether the machine has a battery at all (`false` on desktops — the bundled `battery` plugin hides itself on that). |
-| `System.batteryPercent` | Charge 0–100, or `-1` when Windows reports it as unknown. |
-| `System.batteryCharging` | Whether the battery is actively charging. |
-| `System.acPower` | Whether the machine is running on mains. Distinct from `batteryCharging`: plugged in and full is `acPower` without `batteryCharging`. |
-| `System.batteryTimeLeft` | Estimated seconds of runtime left, or `-1` when unknown (which includes being on AC). |
-| `System.batterySaver` | Whether Windows battery saver is on. |
-
-The battery values are polled on the same one-second timer as the stats but
-notify through their own `batteryChanged` signal — they change rarely, and
-routing them through the per-second `statsChanged` would re-run every
-unrelated binding once a second.
 
 ## Plugins (registry & config)
 
@@ -424,6 +413,21 @@ appear here.
 
 Icons are cached per executable, so a chatty title (a browser address bar
 being typed into) never re-encodes a PNG.
+
+## Battery
+
+| Member | Description |
+|---|---|
+| `Battery.available` | Whether the machine has a battery at all (`false` on desktops — the bundled `battery` plugin hides itself on that). |
+| `Battery.percent` | Charge 0–100, or `-1` when Windows reports it as unknown. |
+| `Battery.charging` | Whether the battery is actively charging. |
+| `Battery.acPower` | Whether the machine is running on mains. Distinct from `charging`: plugged in and full is `acPower` without `charging`. |
+| `Battery.timeLeft` | Estimated seconds of runtime left, or `-1` when unknown (which includes being on AC). |
+| `Battery.saver` | Whether Windows battery saver is on. |
+
+Polled once a second; `changed` fires only when something actually moved,
+since battery state rarely changes and a per-second signal would re-run
+every `Battery` binding for nothing.
 
 ## Power
 

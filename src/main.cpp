@@ -15,6 +15,7 @@
 
 #include "appsapi.h"
 #include "audioapi.h"
+#include "batteryapi.h"
 #include "bluetoothapi.h"
 #include "colorpalette.h"
 #include "foregroundwindow.h"
@@ -133,6 +134,7 @@ int main(int argc, char *argv[])
     QDir().mkpath(pluginsDir);
 
     SystemApi systemApi(pluginsDir);
+    BatteryApi battery;
     ColorPalette colors(pluginsDir);
     WifiApi wifi;
     MediaApi media;
@@ -147,6 +149,7 @@ int main(int argc, char *argv[])
 
     const auto registerQmlTypes = [&] {
         qmlRegisterSingletonInstance("Qwin", 1, 0, "System", &systemApi);
+        qmlRegisterSingletonInstance("Qwin", 1, 0, "Battery", &battery);
         qmlRegisterType<PanelWindow>("Qwin", 1, 0, "PanelWindow");
         qmlRegisterType<Hotkey>("Qwin", 1, 0, "Hotkey");
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Hotkeys", &hotkeys);

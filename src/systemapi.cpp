@@ -23,14 +23,12 @@ SystemApi::SystemApi(const QString &pluginsDir, QObject *parent)
     : QObject(parent)
     , m_pluginsDir(QDir(pluginsDir).absolutePath())
 {
-    updateStats();   // primes the CPU-time baseline; first real value is a second out
-    updateBattery(); // so the first frame shows real state, not the defaults
+    updateStats(); // primes the CPU-time baseline; first real value is a second out
 
     m_timer.setInterval(1000);
     connect(&m_timer, &QTimer::timeout, this, [this] {
         updateStats();
         emit statsChanged();
-        updateBattery(); // emits only when something actually moved
     });
     m_timer.start();
 }
@@ -62,44 +60,6 @@ void SystemApi::updateStats()
     mem.dwLength = sizeof(mem);
     if (GlobalMemoryStatusEx(&mem))
         m_memoryUsagePercent = double(mem.dwMemoryLoad);
-}
-
-void SystemApi::updateBattery()
-{
-    SYSTEM_POWER_STATUS status;
-    if (!GetSystemPowerStatus(&status))
-        return;
-
-    // BatteryFlag bit 7 is "no system battery" - what desktops and some VMs
-    // report instead of leaving the other fields meaningful.
-    const bool available = (status.BatteryFlag & 128) == 0;
-    // 255 = unknown.
-    const int percent = (status.BatteryLifePercent == 255) ? -1 : int(status.BatteryLifePercent);
-    const bool charging = (status.BatteryFlag & 8) != 0;
-    const bool ac = status.ACLineStatus == 1;
-    // (DWORD)-1 = unknown, distinct from 0.
-    const int timeLeft = (status.BatteryLifeTime == DWORD(-1)) ? -1 : int(status.BatteryLifeTime);
-    // The battery-saver bit; older SDKs named this field Reserved1.
-    const bool saver = status.SystemStatusFlag == 1;
-
-    const bool changed = available != m_batteryAvailable
-                       || percent != m_batteryPercent
-                       || charging != m_batteryCharging
-                       || ac != m_acPower
-                       || timeLeft != m_batteryTimeLeft
-                       || saver != m_batterySaver;
-
-    m_batteryAvailable = available;
-    m_batteryPercent = percent;
-    m_batteryCharging = charging;
-    m_acPower = ac;
-    m_batteryTimeLeft = timeLeft;
-    m_batterySaver = saver;
-
-    // Battery rarely changes, unlike CPU/RAM: on statsChanged it would re-run
-    // every unrelated binding once a second.
-    if (changed)
-        emit batteryChanged();
 }
 
 QString SystemApi::readTextFile(const QString &path) const
