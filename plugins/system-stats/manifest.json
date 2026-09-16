@@ -1,5 +1,6 @@
 {
     "name": "system-stats",
+    "description": "Minimal text readout of CPU and RAM usage.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

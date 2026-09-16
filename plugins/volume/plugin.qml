@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Volume and output-device switcher: speaker glyph and percent in the bar,
 // wheel to nudge the level, middle-click to mute without opening anything.
@@ -104,6 +104,37 @@ Rectangle {
                     ctx.stroke()
                 }
             }
+        }
+    }
+
+    // The popup's bordered, hoverable action row ("Mute", "Sound settings").
+    component PopupButton: Rectangle {
+        id: button
+
+        property string label
+
+        signal clicked()
+
+        height: 32
+        radius: 8
+        color: mouse.containsMouse ? Qt.alpha(Colors.accent, 0.25)
+                                    : Qt.alpha(Colors.surface, 0.13)
+        border.color: Qt.alpha(Colors.accent, 0.4)
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text: button.label
+            color: Colors.text
+            font.family: Theme.fontFamily
+            font.pixelSize: 13
+        }
+
+        MouseArea {
+            id: mouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: button.clicked()
         }
     }
 
@@ -234,13 +265,9 @@ Rectangle {
                 }
             }
 
-            // The same hand-off button the wifi and battery popups use.
             PopupButton {
                 width: parent.width
                 label: Audio.muted ? "Unmute" : "Mute"
-                accentColor: Colors.accent
-                surfaceColor: Colors.surface
-                textColor: Colors.text
                 onClicked: Audio.toggleMute()
             }
 
@@ -320,9 +347,6 @@ Rectangle {
             PopupButton {
                 width: parent.width
                 label: "Sound settings"
-                accentColor: Colors.accent
-                surfaceColor: Colors.surface
-                textColor: Colors.text
                 onClicked: {
                     Audio.openSoundSettings()
                     volumeMenu.dismiss()

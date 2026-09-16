@@ -1,5 +1,6 @@
 {
     "name": "weather",
+    "description": "Temperature and a 3-day forecast from Open-Meteo.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Battery indicator: charge glyph and percentage in the bar, with charge
 // state, time remaining and the settings shortcut in the popup. Hides itself
@@ -49,8 +49,8 @@ Rectangle {
     }
 
     // Battery glyph on a Canvas: body, cap, a fill proportional to charge,
-    // and a bolt while charging. Inline rather than in shared/, since nothing
-    // else needs it; the requestPaint() shape mirrors shared/WifiIcon.qml.
+    // and a bolt while charging. The requestPaint() shape mirrors wifi's
+    // WifiGlyph.
     component BatteryGlyph: Item {
         id: glyph
         width: 20
@@ -155,6 +155,38 @@ Rectangle {
         }
     }
 
+    // The popup action button - a bordered, hoverable row for the popup's
+    // single hand-off action ("Power settings").
+    component PopupButton: Rectangle {
+        id: button
+
+        property string label
+
+        signal clicked()
+
+        height: 32
+        radius: 8
+        color: mouse.containsMouse ? Qt.alpha(Colors.accent, 0.25)
+                                    : Qt.alpha(Colors.surface, 0.13)
+        border.color: Qt.alpha(Colors.accent, 0.4)
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text: button.label
+            color: Colors.text
+            font.family: Theme.fontFamily
+            font.pixelSize: 13
+        }
+
+        MouseArea {
+            id: mouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: button.clicked()
+        }
+    }
+
     Row {
         id: batteryRow
         anchors.centerIn: parent
@@ -235,9 +267,6 @@ Rectangle {
             PopupButton {
                 width: parent.width
                 label: "Power settings"
-                accentColor: Colors.accent
-                surfaceColor: Colors.surface
-                textColor: Colors.text
                 onClicked: {
                     Qt.openUrlExternally("ms-settings:powersleep")
                     batteryMenu.dismiss()

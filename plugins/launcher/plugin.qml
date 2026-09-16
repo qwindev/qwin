@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Link launcher: a hotkey summons a centered overlay of the link cards its
 // config.json section defines ("groups": [{name, links: [{name, url}]}]),

@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // WiFi indicator: strength glyph and signal percentage in the bar, with the
 // SSID, live rates and switch button in the popup. Hides itself with no WLAN
@@ -35,12 +35,101 @@ Rectangle {
     color: wifiMouse.containsMouse || wifiMenu.opened ? Qt.alpha(Colors.surface, 0.13)
                                                       : "transparent"
 
+    // WiFi strength glyph: a dot and three arcs on a Canvas, so no icon font
+    // is needed. Arcs light with signal strength; `off` dims everything and
+    // draws a slash.
+    component WifiGlyph: Item {
+        id: glyph
+
+        property int percent: 0
+        property bool off: false
+        property color litColor: "white"
+        property color dimColor: "#66888888"
+
+        width: 16
+        height: 16
+
+        onPercentChanged: canvas.requestPaint()
+        onOffChanged: canvas.requestPaint()
+        onLitColorChanged: canvas.requestPaint()
+        onDimColorChanged: canvas.requestPaint()
+
+        Canvas {
+            id: canvas
+            anchors.fill: parent
+            onPaint: {
+                const ctx = getContext("2d")
+                ctx.reset()
+                const w = width
+                const h = height
+                const cx = w / 2
+                const cy = h * 0.85
+                const thresholds = [10, 45, 75] // arc i lights at percent >= thresholds[i]
+                ctx.lineWidth = Math.max(1.4, w / 11)
+                ctx.lineCap = "round"
+
+                ctx.fillStyle = (!glyph.off && glyph.percent > 0) ? glyph.litColor : glyph.dimColor
+                ctx.beginPath()
+                ctx.arc(cx, cy, ctx.lineWidth * 0.8, 0, Math.PI * 2)
+                ctx.fill()
+
+                for (let i = 0; i < 3; i++) {
+                    const lit = !glyph.off && glyph.percent >= thresholds[i]
+                    ctx.strokeStyle = lit ? glyph.litColor : glyph.dimColor
+                    ctx.beginPath()
+                    ctx.arc(cx, cy, (i + 1) * h * 0.27, -Math.PI * 0.75, -Math.PI * 0.25)
+                    ctx.stroke()
+                }
+
+                if (glyph.off) {
+                    ctx.strokeStyle = glyph.dimColor
+                    ctx.beginPath()
+                    ctx.moveTo(w * 0.15, h * 0.08)
+                    ctx.lineTo(w * 0.85, h * 0.92)
+                    ctx.stroke()
+                }
+            }
+        }
+    }
+
+    // The popup action button - a bordered, hoverable row for the popup's
+    // single hand-off action ("Switch network").
+    component PopupButton: Rectangle {
+        id: button
+
+        property string label
+
+        signal clicked()
+
+        height: 32
+        radius: 8
+        color: mouse.containsMouse ? Qt.alpha(Colors.accent, 0.25)
+                                    : Qt.alpha(Colors.surface, 0.13)
+        border.color: Qt.alpha(Colors.accent, 0.4)
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text: button.label
+            color: Colors.text
+            font.family: Theme.fontFamily
+            font.pixelSize: 13
+        }
+
+        MouseArea {
+            id: mouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: button.clicked()
+        }
+    }
+
     Row {
         id: wifiRow
         anchors.centerIn: parent
         spacing: 6
 
-        WifiIcon {
+        WifiGlyph {
             anchors.verticalCenter: parent.verticalCenter
             width: 15; height: 15
             percent: wifiItem.level
@@ -82,7 +171,7 @@ Rectangle {
             Row {
                 spacing: 8
 
-                WifiIcon {
+                WifiGlyph {
                     anchors.verticalCenter: parent.verticalCenter
                     width: 16; height: 16
                     percent: wifiItem.level
@@ -139,9 +228,6 @@ Rectangle {
             PopupButton {
                 width: parent.width
                 label: "Switch network"
-                accentColor: Colors.accent
-                surfaceColor: Colors.surface
-                textColor: Colors.text
                 onClicked: {
                     Wifi.openNetworkFlyout()
                     wifiMenu.dismiss()

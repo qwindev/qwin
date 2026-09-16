@@ -1,5 +1,6 @@
 {
     "name": "tiling",
+    "description": "Windowless service that configures the Tiler and binds tiling and workspace hotkeys.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

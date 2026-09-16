@@ -51,7 +51,6 @@ private:
     void showErrorWindow(const QString &entryFile, const QString &errorText);
     void refreshWatches();
     QString entryFileForPath(const QString &path) const;
-    bool isSharedPath(const QString &path) const;
     void resetEngine();
 
     // Owned so it can be rebuilt wholesale: Qt 6 cannot dependably evict
@@ -66,6 +65,6 @@ private:
     QTimer m_debounce;          // editors fire several fs events per save
     QSet<QString> m_pending;    // entry files scheduled for reload
     bool m_rescanPending = false;
-    bool m_reloadAllPending = false; // a shared/ file changed: reload every plugin
+    bool m_reloadAllPending = false; // config.json changed, or an embedded plugin did
     int m_loadSerial = 0;       // cache-busting counter, see loadPlugin()
 };

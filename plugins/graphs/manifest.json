@@ -1,5 +1,6 @@
 {
     "name": "graphs",
+    "description": "Live sparklines for CPU, RAM and network throughput.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

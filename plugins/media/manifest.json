@@ -1,1 +1,1 @@
-{ "name": "media", "author": "Krzysztof Jeske", "version": "1.0.0" }
+{ "name": "media", "description": "Now-playing readout with play/pause and skip controls.", "author": "Krzysztof Jeske", "version": "1.0.0" }

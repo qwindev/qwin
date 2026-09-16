@@ -20,10 +20,12 @@ class PluginRegistry : public QObject
     Q_OBJECT
 public:
     struct Plugin {
-        QString name;      // lowercase dashed, from manifest.json
+        QString name;        // lowercase dashed, from manifest.json
         QString author;
         QString version;
-        QString entryFile; // absolute path to the folder's plugin.qml
+        QString description; // optional one-line blurb, from manifest.json
+        QString repository;  // optional GitHub "owner/repo", from manifest.json
+        QString entryFile;   // absolute path to the folder's plugin.qml
     };
     // An unregisterable plugin folder. The manager shows an error window
     // keyed under entryFile, so fixing the file swaps in the real plugin.

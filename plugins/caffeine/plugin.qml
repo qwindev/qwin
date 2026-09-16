@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Caffeine: a click-to-arm keep-awake toggle over Power.keepAwake. A filled
 // cup with steam means armed, a hollow outline idle - a shape difference,

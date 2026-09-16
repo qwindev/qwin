@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // App launcher, PowerToys Run shaped: a hotkey summons a centered search box
 // over everything, typing filters the installed apps, Enter starts the

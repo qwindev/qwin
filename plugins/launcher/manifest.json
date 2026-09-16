@@ -1,5 +1,6 @@
 {
     "name": "launcher",
+    "description": "Hotkey-summoned overlay of link cards defined in config.json.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

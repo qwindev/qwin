@@ -1,5 +1,6 @@
 {
     "name": "hotkeys",
+    "description": "Hotkey cheat sheet listing every declared chord, its owning plugin and whether it registered.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

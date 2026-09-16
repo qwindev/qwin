@@ -11,7 +11,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Core Gui Qml Quick Widgets)
-qt_standard_project_setup()
+# REQUIRES 6.8 opts into QTP0001 NEW: qt_add_qml_module below resources its
+# module under /qt/qml/, which is on the engine's default import path (the
+# OLD prefix "/" is not, and warns). Qt is pinned at 6.8.3 here and in CI.
+qt_standard_project_setup(REQUIRES 6.8)
 
 qt_add_executable(qwin
     src/main.cpp
@@ -37,6 +40,27 @@ qt_add_executable(qwin
     src/powerapi.cpp src/powerapi.h
     src/bluetoothapi.cpp src/bluetoothapi.h
     src/appsapi.cpp src/appsapi.h
+)
+
+# Qwin.Ui: host-provided QML compiled into the exe (Popup, PopupState,
+# Theme). Plugins must all see the same PopupState instance for its
+# "one open popup" rule to hold, which a copy vendored per plugin folder
+# would break - so this is API, not sample content, and versions with the
+# exe rather than living under plugins/.
+# QT_QML_SINGLETON_TYPE marks PopupState/Theme as singletons in the
+# generated qmldir; qt_add_qml_module alone doesn't infer it from `pragma
+# Singleton`. QT_RESOURCE_ALIAS strips the src/ui/ prefix so the files land
+# flat next to the module's qmldir instead of in a subdirectory of it.
+set_source_files_properties(src/ui/PopupState.qml src/ui/Theme.qml
+    PROPERTIES QT_QML_SINGLETON_TYPE TRUE)
+foreach(_ui_file Popup.qml PopupState.qml Theme.qml)
+    set_source_files_properties(src/ui/${_ui_file}
+        PROPERTIES QT_RESOURCE_ALIAS ${_ui_file})
+endforeach()
+qt_add_qml_module(qwin
+    URI Qwin.Ui
+    VERSION 1.0
+    QML_FILES src/ui/Popup.qml src/ui/PopupState.qml src/ui/Theme.qml
 )
 
 # Qt6::Widgets: QSystemTrayIcon

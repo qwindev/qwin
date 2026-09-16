@@ -51,6 +51,7 @@ usable desktop out of the box live in [`plugins/`](plugins/).
 
 ## Docs
 
+[Writing a plugin](docs/plugins.md) ·
 [API reference](docs/api.md) ·
 [Configuration & theming](docs/configuration.md) ·
 [Building](docs/building.md) ·

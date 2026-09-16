@@ -1,5 +1,6 @@
 {
     "name": "workspaces",
+    "description": "Workspace switcher buttons for the tiler's focused monitor.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

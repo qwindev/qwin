@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // "Now Playing": play/pause, a "Title - Artist" line that marquees past
 // maxWidth, and prev/next. The Media singleton follows whatever app owns

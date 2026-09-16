@@ -1,7 +1,7 @@
 import QtQuick
 import QtQuick.Window
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Hotkey cheat sheet: a hotkey summons a centered overlay listing every
 // `Hotkey` Qwin has declared - chord, owning plugin, description, and

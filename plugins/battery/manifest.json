@@ -1,5 +1,6 @@
 {
     "name": "battery",
+    "description": "Battery charge glyph and percentage, with charging state and time remaining in the popup.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

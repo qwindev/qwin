@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Clock in the bar; clicking it opens a month calendar, the same
 // module + Popup idiom as the wifi plugin. The bar text format comes from

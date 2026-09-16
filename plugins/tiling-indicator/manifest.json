@@ -1,5 +1,6 @@
 {
     "name": "tiling-indicator",
+    "description": "Bar toggle showing whether the tiler is on and how many tiles are on screen.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

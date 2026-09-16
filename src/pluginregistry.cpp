@@ -8,6 +8,7 @@
 #include <QJsonParseError>
 #include <QJsonValue>
 #include <QRegularExpression>
+#include <QVersionNumber>
 
 namespace {
 
@@ -23,6 +24,14 @@ bool isValidName(const QString &name)
     static const QRegularExpression pattern(
         QStringLiteral("^[a-z0-9]+(-[a-z0-9]+)*$"));
     return pattern.match(name).hasMatch();
+}
+
+// "owner/repo", e.g. "qwindev/weather" - also rejects a pasted full URL.
+bool isValidRepository(const QString &repository)
+{
+    static const QRegularExpression pattern(
+        QStringLiteral("^[A-Za-z0-9-]+/[A-Za-z0-9._-]+$"));
+    return pattern.match(repository).hasMatch();
 }
 
 // Deep search for a string equal to `needle`: does this config embed that plugin?
@@ -145,9 +154,6 @@ void PluginRegistry::scanManifests()
                                              QDir::Name);
     for (const QFileInfo &sub : subDirs) {
         const QDir dir(sub.absoluteFilePath());
-        if (dir.dirName().compare(QStringLiteral("shared"), Qt::CaseInsensitive) == 0)
-            continue; // importable components, never plugins
-
         const QString entryFile = dir.absoluteFilePath(QStringLiteral("plugin.qml"));
         const QString manifestFile = dir.absoluteFilePath(QStringLiteral("manifest.json"));
         const bool hasEntry = QFileInfo::exists(entryFile);
@@ -180,6 +186,11 @@ void PluginRegistry::scanManifests()
                 plugin.name = normalized(rawName);
                 plugin.author = obj.value(QStringLiteral("author")).toString();
                 plugin.version = obj.value(QStringLiteral("version")).toString();
+                const QJsonValue descriptionValue = obj.value(QStringLiteral("description"));
+                const QJsonValue repositoryValue = obj.value(QStringLiteral("repository"));
+                const QJsonValue minVersionValue = obj.value(QStringLiteral("minQwinVersion"));
+                plugin.description = descriptionValue.toString();
+                plugin.repository = repositoryValue.toString();
 
                 if (plugin.name.isEmpty())
                     error = QStringLiteral("manifest.json: \"name\" (string) is required.");
@@ -195,6 +206,36 @@ void PluginRegistry::scanManifests()
                                      QDir::toNativeSeparators(
                                          QFileInfo(m_plugins.value(plugin.name).entryFile)
                                              .absolutePath()));
+                else if (!descriptionValue.isUndefined() && !descriptionValue.isString())
+                    error = QStringLiteral("manifest.json: \"description\" must be a string.");
+                else if (!repositoryValue.isUndefined() && !repositoryValue.isString())
+                    error = QStringLiteral("manifest.json: \"repository\" must be a string.");
+                else if (!repositoryValue.isUndefined() && !isValidRepository(plugin.repository))
+                    error = QStringLiteral("manifest.json: \"repository\" must be a GitHub "
+                                           "\"owner/repo\", e.g. \"qwindev/weather\".");
+                else if (!minVersionValue.isUndefined() && !minVersionValue.isString())
+                    error = QStringLiteral("manifest.json: \"minQwinVersion\" must be a string.");
+                else if (!minVersionValue.isUndefined()) {
+                    const QString minVersionStr = minVersionValue.toString();
+                    qsizetype suffixIndex = -1;
+                    const QVersionNumber minVersion =
+                        QVersionNumber::fromString(minVersionStr, &suffixIndex);
+                    if (minVersion.isNull() || suffixIndex != minVersionStr.size()) {
+                        error = QStringLiteral("manifest.json: \"minQwinVersion\" must be a "
+                                               "version like \"1.2.0\".");
+                    } else {
+                        // Dev builds report 0.0.0 (no git tag at configure time), which would
+                        // otherwise fail the gate for every plugin that declares a minimum.
+                        const QVersionNumber hostVersion =
+                            QVersionNumber::fromString(QStringLiteral(QWIN_VERSION_STR));
+                        if (!hostVersion.normalized().isNull() && hostVersion < minVersion) {
+                            error = QStringLiteral(
+                                        "Needs Qwin %1 or newer - this is Qwin %2.\n"
+                                        "Update from https://github.com/qwindev/qwin/releases")
+                                        .arg(minVersion.toString(), hostVersion.toString());
+                        }
+                    }
+                }
             }
         }
 

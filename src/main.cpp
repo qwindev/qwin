@@ -167,7 +167,7 @@ int main(int argc, char *argv[])
     };
     registerQmlTypes();
 
-    // The manager rebuilds the engine on shared/ reloads; each rebuild must
+    // The manager rebuilds the engine on full reloads; each rebuild must
     // redo the registrations, as a by-instance singleton only serves the
     // engine it was registered for.
     PluginManager manager(pluginsDir, &registry);

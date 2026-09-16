@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // The focused window's title, app icon and optional muted app-name prefix.
 // Hides itself through the usual `shown` whenever nothing focusable owns the

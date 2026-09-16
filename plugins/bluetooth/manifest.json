@@ -1,5 +1,6 @@
 {
     "name": "bluetooth",
+    "description": "Bluetooth glyph and connected-device count, with the paired-device list in the popup.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

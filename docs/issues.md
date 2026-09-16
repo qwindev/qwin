@@ -1,8 +1,3 @@
-Minor
-
-- Duplicated Win32 helpers: processCreationTime is in both tilingapi.cpp:87 and tilingstate.cpp:39, and the exe-path lookup is in both foregroundwindow.cpp:54 and tilingapi.cpp:1004. The comments say one copy was deliberate. With two duplicated pairs, a small win32util.* starts to pay for itself.
-- Services start whether or not anything uses them. The System timer, Wifi and Bluetooth polling, and the tiler's system-wide event hooks all run from main.cpp even when no loaded plugin reads them. Each costs little. If you care, connectNotify can start polling on the first binding.
-
 
 
 

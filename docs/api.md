@@ -1,5 +1,8 @@
 # Plugin API reference
 
+New to writing a plugin? Start with [Writing a plugin](plugins.md) —
+manifest.json, project layout, imports, publishing.
+
 Everything a plugin can use comes from one import:
 
 ```qml
@@ -16,7 +19,7 @@ Singletons: [`System`](#system) · [`Plugins`](#plugins-registry--config) ·
 Types: [`Hotkey`](#hotkey-global-hotkeys) · [`PanelWindow`](#panelwindow-taskbar-style-panels) ·
 [`Service`](#service-windowless-plugins)
 
-Plus the [shared components](#shared-components) in `<plugins-dir>\shared\`.
+Plus the [UI components](#ui-components-import-qwinui) from `import Qwin.Ui`.
 
 ## System
 
@@ -27,7 +30,7 @@ Plus the [shared components](#shared-components) in `<plugins-dir>\shared\`.
 | `System.hostname` | Machine host name (constant). |
 | `System.readTextFile(path)` | Returns the file content as a string. Relative paths resolve against the plugins directory; paths escaping the plugins directory (after canonicalization) are rejected and return `""`. |
 | `System.openStartMenu()` | Opens the Windows Start menu, or closes it again — it toggles, like the key it synthesizes (Ctrl+Esc). |
-| `System.rememberFocus()` / `System.restoreFocus()` | Focus bracket for overlays and popups: call `rememberFocus()` before taking the keyboard (showing a popup or overlay), `restoreFocus()` after hiding, so the window the user was working in gets the keyboard back. `shared/Popup.qml` and the bundled `run`/`launcher` overlays use it. |
+| `System.rememberFocus()` / `System.restoreFocus()` | Focus bracket for overlays and popups: call `rememberFocus()` before taking the keyboard (showing a popup or overlay), `restoreFocus()` after hiding, so the window the user was working in gets the keyboard back. `Qwin.Ui`'s `Popup` and the bundled `run`/`launcher` overlays use it. |
 
 ## Plugins (registry & config)
 
@@ -57,7 +60,7 @@ which feeds back through the Loader and deadlocks invisible.
 `Plugins.config()` values are plain snapshots, not live bindings — editing
 `config.json` reloads the affected plugins instead, so reading the config
 once at load is always in sync. Changing a plugin that others embed reloads
-the embedders too (via a full engine rebuild, same as `shared/` edits).
+the embedders too (via a full engine rebuild).
 
 ## Colors (theming)
 
@@ -95,8 +98,8 @@ Any additional key you add to the file becomes a property too
 
 `Colors` is colors only. Non-color theming — currently the font family the
 bundled plugins use — lives in config.json's `"theme"` section, served by
-the `Theme` singleton in `shared/` (see
-[shared components](#shared-components)).
+the `Theme` singleton (see
+[UI components](#ui-components-import-qwinui)).
 
 ## Hotkey (global hotkeys)
 
@@ -510,42 +513,41 @@ Enumerating the namespace costs ~300 ms warm and ~600 ms cold, so it must
 never land on a summon — hence the five-minute staleness window, and the
 `run` plugin's scan shortly after startup rather than on first use.
 
-## Shared components
+## UI components (`import Qwin.Ui`)
 
-QML files in `<plugins-dir>\shared\` are reusable components: import them
-with `import "../shared"` from a plugin folder. The folder is never loaded
-as a plugin, and editing a shared file hot-reloads every plugin (the host
-rebuilds its QML engine for these reloads, so plugins always see the fresh
-component).
+`Theme`, `Popup` and `PopupState` are host API, compiled into the `qwin`
+exe from `src/ui/` and versioned with it — not sample content under
+`plugins/`. Import them with:
 
-Bundled components:
+```qml
+import Qwin.Ui
+```
 
-- `Theme.qml` — a singleton for app-wide non-color theming, read from
+There is no hot reload for this module: it changes only on a rebuild of the
+exe itself.
+
+- `Theme` — a singleton for app-wide non-color theming, read from
   config.json's `"theme"` section (a reserved name, like `"enabled"`).
   Currently `fontFamily` (default `Cascadia Code`), which every bundled
   plugin binds for its text. Read once per load: a config.json edit rebuilds
   the engine, so it applies live without watching anything itself.
-- `Popup.qml` — an anchored popup window for panel plugins (the Quickshell
+- `Popup` — an anchored popup window for panel plugins (the Quickshell
   `PopupWindow` pattern): opens just below an item with a short unfold
   animation, closes on click-outside or Escape, clamps to the screen edge.
   Properties: `anchorItem`, `contentWidth`, `contentHeight`, `gap`,
   `backgroundColor`, `borderColor`; functions `open()` / `dismiss()` /
   `toggle()`; read-only `opened`. Content declared inside lands in a padded
-  slot. Popups are single-level by design: `PopupState.qml` holds the one
-  open popup, so opening any popup closes the incumbent.
-- `PopupButton.qml` — the bordered, hoverable action row the bundled popups
-  use for their single hand-off action ("Power settings", "Switch network"):
-  `label`, `accentColor` / `surfaceColor` / `textColor`, and a `clicked()`
-  signal.
-- `WifiIcon.qml` — a Canvas-drawn WiFi strength glyph (`percent`, `off`,
-  `litColor`, `dimColor`), no icon font needed.
-- `WeatherIcon.qml` — a Canvas-drawn weather glyph for a WMO `code` (the
-  codes Open-Meteo returns), with `day` swapping sun for moon, plus
-  `litColor` / `dimColor` and a `labelFor(code)` helper.
-- `Sparkline.qml` — a Canvas-drawn line+area chart over a rolling `values`
-  array (oldest first). `maxValue` fixes the vertical scale, `0` auto-scales
-  to the window's own peak floored by `minScale`; `lineColor`, `fillColor`
-  and `lineWidth` style it.
+  slot.
+- `PopupState` — the singleton `Popup` claims on open and releases on close,
+  application-wide, so opening any popup closes whichever one was already
+  open without the plugins knowing about each other. This is what makes
+  popups single-level: every plugin must share the one copy of `PopupState`
+  for the rule to hold, which is why it is compiled into the exe rather than
+  vendored per plugin.
 
-Components in `shared/` take their colors as properties instead of reading
-the `Colors` singleton, so they stay palette-agnostic and reusable.
+`Popup` takes its colors as properties instead of reading the
+`Colors` singleton, so it stays palette-agnostic and reusable.
+
+Plugin-specific widgets and glyphs (a popup action button, a WiFi or weather
+glyph, a sparkline) live as inline components in their own plugin
+(`component Name: ...`), not here, so a plugin folder stays self-contained.

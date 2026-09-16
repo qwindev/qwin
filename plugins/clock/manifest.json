@@ -1,5 +1,6 @@
 {
     "name": "clock",
+    "description": "Clock in the bar with a month calendar popup.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

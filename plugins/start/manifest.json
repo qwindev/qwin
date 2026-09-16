@@ -1,5 +1,6 @@
 {
     "name": "start",
+    "description": "Start button that opens the Windows Start menu.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

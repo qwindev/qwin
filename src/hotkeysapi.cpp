@@ -42,7 +42,7 @@ QVariantList HotkeysApi::list() const
         const QString file = hotkey->sourceFile();
         QString plugin = m_pluginForFile ? m_pluginForFile(file) : QString();
         if (plugin.isEmpty() && !file.isEmpty())
-            plugin = QFileInfo(file).dir().dirName(); // e.g. a Hotkey declared in shared/
+            plugin = QFileInfo(file).dir().dirName();
 
         rows.append({display, plugin, hotkey->description(), hotkey->registered()});
     }

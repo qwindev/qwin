@@ -1,5 +1,6 @@
 {
     "name": "wifi",
+    "description": "WiFi signal glyph and percentage, with SSID, rates and the network switch in the popup.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

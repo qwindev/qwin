@@ -6,7 +6,7 @@ installed:
 ```cmd
 mkdir dist
 copy build\qwin.exe dist\
-C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe --qmldir plugins --qmldir deploy --release ^
+C:\Qt\6.8.3\msvc2022_64\bin\windeployqt.exe --qmldir plugins --qmldir deploy --qmldir src\ui --release ^
   --no-compiler-runtime --no-translations --no-opengl-sw ^
   --no-system-d3d-compiler --no-system-dxc-compiler ^
   dist\qwin.exe
@@ -28,8 +28,11 @@ That produces a ~65 MB folder (~135 MB without the prune flags). Notes:
   newer VS versions rename it — CI globs `Microsoft.VC*.CRT` for this). The
   DLLs inside keep their `*140.dll` names either way.
 - `--qmldir` must point at QML sources so windeployqt bundles the right QML
-  modules. Users can import arbitrary QtQuick modules at runtime, so the
-  second `--qmldir deploy` scans `deploy/kitchen-sink.qml`, which imports
+  modules. `src\ui` is `Qwin.Ui`'s own source — compiled into the exe, but
+  windeployqt still needs to see the import statements inside it to bundle
+  what *it* imports (`QtQuick.Window`). Users can import arbitrary QtQuick
+  modules at runtime, so the second `--qmldir deploy` scans
+  `deploy/kitchen-sink.qml`, which imports
   QtQuick, QtQuick.Window, QtQuick.Controls and QtQuick.Layouts — extend that
   file if your users need more modules. **Never narrow the QML deployment to
   what `plugins` alone imports**: the scanner only sees QML that

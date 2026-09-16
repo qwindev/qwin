@@ -282,22 +282,10 @@ QString PluginManager::entryFileForPath(const QString &path) const
     return QString();
 }
 
-// <pluginsDir>/shared and anything inside it: importable by any plugin, so
-// edits there reload all plugins. Never a plugin itself.
-bool PluginManager::isSharedPath(const QString &path) const
-{
-    const QString shared = m_dir.absoluteFilePath(QStringLiteral("shared"));
-    const QString p = QDir::cleanPath(path);
-    return p.compare(shared, Qt::CaseInsensitive) == 0
-           || p.startsWith(shared + QLatin1Char('/'), Qt::CaseInsensitive);
-}
-
 void PluginManager::onFileChanged(const QString &path)
 {
-    if (isSharedPath(path)) {
-        m_reloadAllPending = true;
-    } else if (QFileInfo(path).absoluteFilePath()
-               == m_dir.absoluteFilePath(QStringLiteral("config.json"))) {
+    if (QFileInfo(path).absoluteFilePath()
+        == m_dir.absoluteFilePath(QStringLiteral("config.json"))) {
         // applyPendingReloads()'s rescan escalates if it actually changed.
         m_rescanPending = true;
     } else {
@@ -310,9 +298,7 @@ void PluginManager::onFileChanged(const QString &path)
 
 void PluginManager::onDirectoryChanged(const QString &path)
 {
-    if (isSharedPath(path)) {
-        m_reloadAllPending = true;
-    } else if (path == m_dir.absolutePath()) {
+    if (path == m_dir.absolutePath()) {
         // Plugins may have been added or removed.
         m_rescanPending = true;
     } else {
@@ -375,11 +361,12 @@ void PluginManager::applyPendingReloads()
         unloadPlugin(entry);
     flushDeferredDeletes();
 
-    // Imported files compile under query-less URLs, so loadPlugin()'s
-    // unique-URL trick misses them, and clearComponentCache() cannot evict a
-    // unit anything still references (verified: edited shared files reloaded
-    // stale, surviving even collectGarbage()). A fresh engine is the only
-    // dependable eviction, and everything is unloaded by now.
+    // Imported and Loader-sourced files compile under query-less URLs, so
+    // loadPlugin()'s unique-URL trick misses them, and clearComponentCache()
+    // cannot evict a unit anything still references (verified: edited
+    // imported files reloaded stale, surviving even collectGarbage()). A
+    // fresh engine is the only dependable eviction, and everything is
+    // unloaded by now.
     if (fullReload)
         resetEngine();
 

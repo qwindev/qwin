@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Workspace switcher: one button per workspace on the tiler's focused
 // monitor. Workspaces belong to the `Tiler` singleton, not the OS - switching

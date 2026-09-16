@@ -1,7 +1,7 @@
 pragma ComponentBehavior: Bound
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Power: the session menu over the Power singleton, which acts immediately.
 // The confirmation is here instead: every row but Lock arms on the first

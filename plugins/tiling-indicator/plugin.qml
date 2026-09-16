@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Bar module: whether the tiler is on and how many tiles are on screen; a
 // click toggles it. Config and chords live in `plugins/tiling` - without that

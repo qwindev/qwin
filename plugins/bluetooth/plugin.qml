@@ -1,6 +1,6 @@
 import QtQuick
 import Qwin
-import "../shared"
+import Qwin.Ui
 
 // Bluetooth indicator: rune glyph and connected count in the bar, with the
 // paired-device list and settings shortcut in the popup. Minimal like Wifi -
@@ -84,6 +84,38 @@ Rectangle {
                 ctx.closePath()
                 ctx.stroke()
             }
+        }
+    }
+
+    // The popup action button - a bordered, hoverable row for the popup's
+    // single hand-off action ("Bluetooth settings").
+    component PopupButton: Rectangle {
+        id: button
+
+        property string label
+
+        signal clicked()
+
+        height: 32
+        radius: 8
+        color: mouse.containsMouse ? Qt.alpha(Colors.accent, 0.25)
+                                    : Qt.alpha(Colors.surface, 0.13)
+        border.color: Qt.alpha(Colors.accent, 0.4)
+        border.width: 1
+
+        Text {
+            anchors.centerIn: parent
+            text: button.label
+            color: Colors.text
+            font.family: Theme.fontFamily
+            font.pixelSize: 13
+        }
+
+        MouseArea {
+            id: mouse
+            anchors.fill: parent
+            hoverEnabled: true
+            onClicked: button.clicked()
         }
     }
 
@@ -190,9 +222,6 @@ Rectangle {
             PopupButton {
                 width: parent.width
                 label: "Bluetooth settings"
-                accentColor: Colors.accent
-                surfaceColor: Colors.surface
-                textColor: Colors.text
                 onClicked: {
                     Qt.openUrlExternally("ms-settings:bluetooth")
                     bluetoothMenu.dismiss()

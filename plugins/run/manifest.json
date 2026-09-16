@@ -1,5 +1,6 @@
 {
     "name": "run",
+    "description": "Hotkey-summoned search over installed apps, PowerToys Run style.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

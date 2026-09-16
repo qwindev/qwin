@@ -1,5 +1,6 @@
 {
     "name": "power",
+    "description": "Session menu for lock, sleep, restart and shutdown, with a confirm step.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

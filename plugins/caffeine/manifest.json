@@ -1,5 +1,6 @@
 {
     "name": "caffeine",
+    "description": "Click-to-arm keep-awake toggle over Power.keepAwake.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }

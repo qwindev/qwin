@@ -1,5 +1,6 @@
 {
     "name": "bar",
+    "description": "Top panel that assembles the other bar modules from config.json.",
     "author": "Krzysztof Jeske",
     "version": "1.0.0"
 }
