@@ -1,11 +1,11 @@
 import QtQuick
 import Qwin
-import "../shared"
 
-// Tiling: the keyboard surface for the `Tiler` singleton, plus a bar
-// indicator. The layout itself lives in C++ and survives hot reloads - this
-// plugin only pushes config into it and binds chords to its commands, so
-// reloading never disturbs windows already placed.
+// Tiling: a windowless Service that pushes config into the `Tiler` singleton
+// and binds every tiling and workspace chord, so it goes in "enabled" rather
+// than in the bar. The layout itself lives in C++ and survives hot reloads -
+// reloading this never disturbs windows already placed. The bar's
+// `tiling-indicator` and `workspaces` modules only display state.
 //
 // Windows are arranged dwindle-style: each new window splits the focused
 // one along its longer side. Drag any inner edge and the split behind it is
@@ -17,7 +17,9 @@ import "../shared"
 //
 // config.json section (all keys optional):
 //   "tiling": {
-//       "enabled": true,
+//       "enabled": true,        // false loads config and chords with tiling
+//                                // off until the indicator or toggle chord
+//                                // turns it on
 //       "gap": 16,               // between windows, logical px
 //       "outerGap": 16,          // to the edge of the work area
 //       "minWidth": 360,          // smallest tile a split may create
@@ -28,10 +30,15 @@ import "../shared"
 //       "hideMethod": "cloak",   // "cloak" | "minimize"; see docs/api.md#tiler
 //       "pinnedTopmost": false,  // keep a pinned window above the active workspace
 //       "debug": false,          // log every adoption and every rect applied
-//       "keys": { "focusLeft": "Alt+H", ... }   // see defaults below
+//       "keys": {
+//           "focusLeft": "Alt+H", ...,          // see defaults below
+//           "switchWorkspace": "Shift+Alt+{n}", // {n} -> 1..min(Tiler.workspaceCount, 9)
+//           "moveToWorkspace": "Ctrl+Alt+{n}",  // moves the foreground window, does not follow it
+//           "moveToEmptyWorkspace": "Shift+Alt+M" // window -> first empty workspace, and follow
+//       }
 //   }
-Rectangle {
-    id: tilingItem
+Service {
+    id: tiling
 
     // Read once per load; a config.json edit reloads the plugin anyway.
     readonly property var cfg: Plugins.config("tiling")
@@ -61,120 +68,79 @@ Rectangle {
         { seq: chord("toggleSplit",    "Shift+Alt+V"), action: "split"    },
         { seq: chord("equalize",       "Shift+Alt+E"), action: "equalize" },
         { seq: chord("toggleTiling",   "Shift+Alt+T"), action: "toggle"   },
-        { seq: chord("togglePinned",   "Shift+Alt+P"), action: "pin"      }
+        { seq: chord("togglePinned",   "Shift+Alt+P"), action: "pin"      },
+        { seq: chord("moveToEmptyWorkspace", "Shift+Alt+M"), action: "moveToEmpty" }
     ]
 
     // A name and a switch rather than a closure per row: the model is data,
     // and a bad config key then warns instead of failing silently.
     function run(action, arg) {
         switch (action) {
-        case "focus":    Tiler.focusDirection(arg); break
-        case "move":     Tiler.moveDirection(arg); break
-        case "resize":   Tiler.resize(arg); break
-        case "float":    Tiler.toggleFloating(); break
-        case "split":    Tiler.toggleSplit(); break
-        case "equalize": Tiler.equalize(); break
-        case "toggle":   Tiler.enabled = !Tiler.enabled; break
-        case "pin":      Tiler.togglePinned(); break
+        case "focus":       Tiler.focusDirection(arg); break
+        case "move":        Tiler.moveDirection(arg); break
+        case "resize":      Tiler.resize(arg); break
+        case "float":       Tiler.toggleFloating(); break
+        case "split":       Tiler.toggleSplit(); break
+        case "equalize":    Tiler.equalize(); break
+        case "toggle":      Tiler.enabled = !Tiler.enabled; break
+        case "pin":         Tiler.togglePinned(); break
+        case "moveToEmpty": Tiler.moveToEmptyWorkspace(); break
         default: console.warn("tiling: unknown action", action)
         }
     }
 
     // Config-driven and never touched at runtime, so a plain binding is
-    // right. `enabled` is not among them - the chord and the click below
-    // own it, and a binding would snap it back.
-    Binding { target: Tiler; property: "gap"; value: tilingItem.cfg.gap !== undefined ? tilingItem.cfg.gap : 16 }
-    Binding { target: Tiler; property: "outerGap"; value: tilingItem.cfg.outerGap !== undefined ? tilingItem.cfg.outerGap : 16 }
-    Binding { target: Tiler; property: "minWidth"; value: tilingItem.cfg.minWidth !== undefined ? tilingItem.cfg.minWidth : 360 }
-    Binding { target: Tiler; property: "minHeight"; value: tilingItem.cfg.minHeight !== undefined ? tilingItem.cfg.minHeight : 220 }
-    Binding { target: Tiler; property: "resizeStep"; value: tilingItem.cfg.resizeStep !== undefined ? tilingItem.cfg.resizeStep : 40 }
-    Binding { target: Tiler; property: "floatProcesses"; value: tilingItem.cfg.floatProcesses || [] }
-    Binding { target: Tiler; property: "workspaceCount"; value: tilingItem.cfg.workspaces !== undefined ? tilingItem.cfg.workspaces : 9 }
-    Binding { target: Tiler; property: "hideMethod"; value: tilingItem.cfg.hideMethod !== undefined ? tilingItem.cfg.hideMethod : "cloak" }
-    Binding { target: Tiler; property: "pinnedTopmost"; value: tilingItem.cfg.pinnedTopmost === true }
-    Binding { target: Tiler; property: "debug"; value: tilingItem.cfg.debug === true }
+    // right. `enabled` is not among them - the toggle chord and the
+    // indicator's click own it after load, and a binding would snap it back.
+    Binding { target: Tiler; property: "gap"; value: tiling.cfg.gap !== undefined ? tiling.cfg.gap : 16 }
+    Binding { target: Tiler; property: "outerGap"; value: tiling.cfg.outerGap !== undefined ? tiling.cfg.outerGap : 16 }
+    Binding { target: Tiler; property: "minWidth"; value: tiling.cfg.minWidth !== undefined ? tiling.cfg.minWidth : 360 }
+    Binding { target: Tiler; property: "minHeight"; value: tiling.cfg.minHeight !== undefined ? tiling.cfg.minHeight : 220 }
+    Binding { target: Tiler; property: "resizeStep"; value: tiling.cfg.resizeStep !== undefined ? tiling.cfg.resizeStep : 40 }
+    Binding { target: Tiler; property: "floatProcesses"; value: tiling.cfg.floatProcesses || [] }
+    Binding { target: Tiler; property: "workspaceCount"; value: tiling.cfg.workspaces !== undefined ? tiling.cfg.workspaces : 9 }
+    Binding { target: Tiler; property: "hideMethod"; value: tiling.cfg.hideMethod !== undefined ? tiling.cfg.hideMethod : "cloak" }
+    Binding { target: Tiler; property: "pinnedTopmost"; value: tiling.cfg.pinnedTopmost === true }
+    Binding { target: Tiler; property: "debug"; value: tiling.cfg.debug === true }
 
-    Component.onCompleted: {
-        if (tilingItem.cfg.enabled !== undefined)
-            Tiler.enabled = tilingItem.cfg.enabled
-    }
+    // Loading this plugin is the opt-in, so a missing key means on.
+    Component.onCompleted: Tiler.enabled = tiling.cfg.enabled !== false
 
     Instantiator {
-        model: tilingItem.bindings
+        model: tiling.bindings
 
         Hotkey {
             required property var modelData
             sequence: modelData.seq
-            onActivated: tilingItem.run(modelData.action, modelData.arg)
+            onActivated: tiling.run(modelData.action, modelData.arg)
         }
     }
 
-    width: row.implicitWidth + 14
-    height: 24
-    radius: 5
-    color: Tiler.enabled ? Qt.alpha(Colors.accent, mouse.containsMouse ? 0.26 : 0.15)
-                         : (mouse.containsMouse ? Qt.alpha(Colors.surface, 0.13) : "transparent")
+    // Shift+Alt+1..9 by default: switch the focused monitor to that
+    // workspace. Capped at 9 - there is no single key left beyond that.
+    Instantiator {
+        model: Math.min(Tiler.workspaceCount, 9)
 
-    Row {
-        id: row
-        anchors.centerIn: parent
-        spacing: 6
-
-        // The dwindle partition itself as the glyph: one vertical divider,
-        // then a horizontal one in the smaller half. Filled panes while
-        // tiling is on, outline while off - a shape difference, not just a
-        // colour shift, so it reads at bar size.
-        Canvas {
-            id: glyph
-            width: 16
-            height: 14
-            anchors.verticalCenter: parent.verticalCenter
-
-            readonly property bool active: Tiler.enabled
-            readonly property color tint: active ? Colors.accent : Colors.textMuted
-
-            onActiveChanged: requestPaint()
-            onTintChanged: requestPaint()
-
-            onPaint: {
-                const ctx = getContext("2d")
-                ctx.reset()
-                ctx.strokeStyle = glyph.tint
-                ctx.fillStyle = glyph.tint
-                ctx.lineWidth = 1.2
-
-                const split = Math.round(width * 0.55)
-                const half = Math.round(height * 0.5)
-                const panes = [
-                    Qt.rect(0.6, 0.6, split - 1.8, height - 1.2),
-                    Qt.rect(split + 0.6, 0.6, width - split - 1.2, half - 1.2),
-                    Qt.rect(split + 0.6, half + 0.6, width - split - 1.2, height - half - 1.2)
-                ]
-                for (let i = 0; i < panes.length; i++) {
-                    const p = panes[i]
-                    ctx.beginPath()
-                    ctx.rect(p.x, p.y, p.width, p.height)
-                    if (glyph.active)
-                        ctx.fill()
-                    else
-                        ctx.stroke()
-                }
-            }
-        }
-
-        Text {
-            anchors.verticalCenter: parent.verticalCenter
-            text: Tiler.managedCount
-            color: Tiler.enabled ? Colors.accent : Colors.textMuted
-            font.family: Theme.fontFamily
-            font.pixelSize: 13
+        Hotkey {
+            required property int index
+            // index goes -1 while the Instantiator tears an item down; an
+            // empty sequence stops it re-registering on a stale number.
+            sequence: index >= 0 ? tiling.chord("switchWorkspace", "Shift+Alt+{n}").replace("{n}", index + 1) : ""
+            onActivated: Tiler.switchToWorkspace(index)
         }
     }
 
-    MouseArea {
-        id: mouse
-        anchors.fill: parent
-        hoverEnabled: true
-        onClicked: Tiler.enabled = !Tiler.enabled
+    // Ctrl+Alt+1..9 by default: send the foreground window to that
+    // workspace without following it. A hotkey, not a button: a chord does
+    // not change focus, so the foreground window is still the one the user
+    // was in.
+    Instantiator {
+        model: Math.min(Tiler.workspaceCount, 9)
+
+        Hotkey {
+            required property int index
+            sequence: index >= 0 ? tiling.chord("moveToWorkspace", "Ctrl+Alt+{n}").replace("{n}", index + 1) : ""
+            onActivated: Tiler.moveToWorkspace(index)
+        }
     }
 }

@@ -1,12 +1,12 @@
 {
-    "enabled": ["bar", "launcher", "run"],
+    "enabled": ["bar", "launcher", "run", "tiling"],
 
     "theme": {
         "fontFamily": "Cascadia Code"
     },
 
     "bar": {
-        "left": ["start", "workspaces", "tiling", "window-title"],
+        "left": ["start", "workspaces", "tiling-indicator", "window-title"],
         "center": ["clock"],
         "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
                   "battery", "power"]
@@ -40,14 +40,14 @@
             "toggleSplit": "Shift+Alt+V",
             "equalize": "Shift+Alt+E",
             "toggleTiling": "Shift+Alt+T",
-            "togglePinned": "Shift+Alt+P"
+            "togglePinned": "Shift+Alt+P",
+            "switchWorkspace": "Shift+Alt+{n}",
+            "moveToWorkspace": "Ctrl+Alt+{n}",
+            "moveToEmptyWorkspace": "Shift+Alt+M"
         }
     },
 
     "workspaces": {
-        "switchKey": "Shift+Alt+{n}",
-        "moveKey": "Ctrl+Alt+{n}",
-        "moveToEmptyKey": "Shift+Alt+M",
         "showEmpty": false
     },
 

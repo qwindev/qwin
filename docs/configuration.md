@@ -4,17 +4,18 @@ On startup Qwin loads plugins from `%APPDATA%\Qwin\plugins\` (created
 automatically), or from the folder given with `--plugins-dir`.
 
 `<plugins-dir>\config.json` is the app-wide configuration. Its `enabled`
-array lists which plugins get their own window; every other top-level key is
+array lists which plugins are loaded at top level — with a window of their
+own, or, for a `Service` root, with none at all; every other top-level key is
 a config section for the plugin of that name, with a shape that plugin
 defines for itself:
 
 ```json
 {
-    "enabled": ["bar", "launcher", "run"],
+    "enabled": ["bar", "launcher", "run", "tiling"],
     "theme": { "fontFamily": "Cascadia Code" },
 
     "bar": {
-        "left": ["start", "workspaces", "tiling", "window-title"],
+        "left": ["start", "workspaces", "tiling-indicator", "window-title"],
         "center": ["clock"],
         "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
                   "battery", "power"]

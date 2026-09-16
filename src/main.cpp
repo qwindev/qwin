@@ -22,6 +22,7 @@
 #include "mediaapi.h"
 #include "panelwindow.h"
 #include "powerapi.h"
+#include "service.h"
 #include "systemapi.h"
 #include "tilingapi.h"
 #include "pluginmanager.h"
@@ -146,6 +147,7 @@ int main(int argc, char *argv[])
         qmlRegisterSingletonInstance("Qwin", 1, 0, "System", &systemApi);
         qmlRegisterType<PanelWindow>("Qwin", 1, 0, "PanelWindow");
         qmlRegisterType<Hotkey>("Qwin", 1, 0, "Hotkey");
+        qmlRegisterType<Service>("Qwin", 1, 0, "Service");
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Colors", &colors);
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Wifi", &wifi);
         qmlRegisterSingletonInstance("Qwin", 1, 0, "Media", &media);

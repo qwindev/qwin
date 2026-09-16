@@ -21,6 +21,7 @@ qt_add_executable(qwin
     src/colorpalette.cpp src/colorpalette.h
     src/panelwindow.cpp src/panelwindow.h
     src/hotkey.cpp src/hotkey.h
+    src/service.cpp src/service.h
     src/wifiapi.cpp src/wifiapi.h
     src/windowfocus.cpp src/windowfocus.h
     src/windowhider.cpp src/windowhider.h

@@ -1,5 +1,6 @@
 #include "pluginmanager.h"
 #include "pluginregistry.h"
+#include "service.h"
 
 #include <QCoreApplication>
 #include <QEvent>
@@ -247,8 +248,16 @@ void PluginManager::loadPlugin(const QString &entryFile)
         return;
     }
 
+    if (qobject_cast<Service *>(root)) {
+        // Nothing to show: Hotkey registers against the thread queue, not a
+        // window (hotkey.cpp), so a service needs no surface at all.
+        m_loaded.insert(entryFile, root);
+        qInfo().noquote() << "Loaded plugin (service)" << entryFile;
+        return;
+    }
+
     showErrorWindow(entryFile,
-                    QStringLiteral("Root object must be a Window or an Item, got %1.")
+                    QStringLiteral("Root object must be a Window, an Item or a Service, got %1.")
                         .arg(QString::fromLatin1(root->metaObject()->className())));
     delete root;
 }

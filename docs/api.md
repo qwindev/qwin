@@ -12,7 +12,8 @@ Singletons: [`System`](#system) · [`Plugins`](#plugins-registry--config) ·
 [`Audio`](#audio-volume--output-devices) · [`ActiveWindow`](#activewindow-focused-window) ·
 [`Power`](#power) · [`Bluetooth`](#bluetooth) · [`Apps`](#apps-installed-apps)
 
-Types: [`Hotkey`](#hotkey-global-hotkeys) · [`PanelWindow`](#panelwindow-taskbar-style-panels)
+Types: [`Hotkey`](#hotkey-global-hotkeys) · [`PanelWindow`](#panelwindow-taskbar-style-panels) ·
+[`Service`](#service-windowless-plugins)
 
 Plus the [shared components](#shared-components) in `<plugins-dir>\shared\`.
 
@@ -51,6 +52,11 @@ A container plugin embeds others by listing their names in its own
 `Loader { source: Plugins.source(name) }` — this is how the bundled `bar`
 assembles its slots. Plugins meant as modules of another plugin keep an
 `Item` root and are simply left out of `enabled`.
+
+Three root kinds, in short: `Window` / `PanelWindow` (the plugin owns its
+own window), `Item` (embedded by a container's `Loader`, or wrapped in a
+default frameless window when it is enabled on its own instead), `Service`
+(no window at all — see below).
 
 A module that wants to hide itself (e.g. a WiFi module on a machine with no
 adapter) declares `property bool shown` on its root, and the container binds
@@ -159,6 +165,33 @@ PanelWindow {
 - The reservation is released automatically when the plugin is removed,
   hot-reloaded, or the app quits.
 
+## Service (windowless plugins)
+
+Use `Service` as the plugin root for a plugin that has nothing to show — it
+only binds hotkeys, pushes config into a singleton, or runs a timer. The
+bundled `tiling` plugin is one: it configures the `Tiler` singleton and
+binds every tiling and workspace chord, with no window of its own.
+
+```qml
+import QtQuick
+import Qwin
+
+Service {
+    Hotkey {
+        sequence: "Shift+Alt+T"
+        onActivated: Tiler.enabled = !Tiler.enabled
+    }
+}
+```
+
+- Children are non-visual objects: `Hotkey`, `Binding`, `Timer`,
+  `Connections`, `Instantiator`, and the like — not `Item`-derived types.
+- A `Service` is listed in `enabled`; it is not a module to embed in another
+  plugin's `Loader`.
+- Hot reload works exactly like any other plugin: the old root is deleted
+  before the replacement registers, which is what releases its `Hotkey`
+  chords in time for the new ones to claim them.
+
 ## Tiler (window tiling)
 
 A dwindle tiling window manager over the desktop's own windows, with
@@ -176,9 +209,11 @@ without being minimized or dropped from Alt+Tab the way minimizing it
 would. Native virtual desktops keep working underneath and are left alone:
 the tiler only ever discovers and manages windows on the current one.
 
-The layout and workspace state live in C++ and survive hot reloads — a
-plugin (see `plugins/tiling`) only pushes config in and binds `Hotkey`
-chords to the commands; `plugins/workspaces` is the bar-facing switcher.
+The layout and workspace state live in C++ and survive hot reloads —
+`plugins/tiling` is a windowless `Service` that pushes config in and binds
+every tiling and workspace `Hotkey` chord to the commands;
+`plugins/tiling-indicator` and `plugins/workspaces` are the bar-facing
+display modules (on/off + tile count, and the workspace switcher buttons).
 
 | Member | Description |
 |---|---|

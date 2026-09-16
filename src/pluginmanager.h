@@ -42,7 +42,7 @@ private slots:
     void applyPendingReloads();
 
 private:
-    // Entry files that should have a window right now -> error text, empty
+    // Entry files that should be loaded right now -> error text, empty
     // for an enabled plugin, set for a broken folder (gets an error window).
     QHash<QString, QString> desiredEntries() const;
     void loadPlugin(const QString &entryFile);
@@ -60,7 +60,7 @@ private:
     std::function<void()> m_reregisterHook;
     PluginRegistry *m_registry;
     QDir m_dir;
-    QHash<QString, QObject *> m_loaded; // entry file -> root object (plugin window, wrapper, or error window)
+    QHash<QString, QObject *> m_loaded; // entry file -> root object (plugin window, wrapper, service, or error window)
 
     QFileSystemWatcher m_watcher;
     QTimer m_debounce;          // editors fire several fs events per save
