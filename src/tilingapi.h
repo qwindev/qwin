@@ -3,6 +3,7 @@
 #include <QHash>
 #include <QObject>
 #include <QRect>
+#include <QSet>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -137,8 +138,10 @@ public:
     // the divider nearest the focused window by `resizeStep`.
     Q_INVOKABLE void resize(const QString &how);
     // Takes the focused window out of the layout, restoring the size it had
-    // when adopted, or puts it back in. No-op on a pinned window - see
-    // togglePinned().
+    // when adopted, or puts it back in. On a window floating only for lack
+    // of room, makes that the user's choice instead (no longer reclaimed the
+    // moment room frees up). A float survives a minimize. No-op on a pinned
+    // window - see togglePinned().
     Q_INVOKABLE void toggleFloating();
     // Flips the split that placed the focused window: the one-key fix for a
     // dwindle that divided the wrong way.
@@ -194,20 +197,21 @@ private:
     struct Managed {
         QString device;          // monitor szDevice
         int workspace = 0;       // 0-based, per monitor
-        bool floating = false;   // sticky: user toggle, no sizing border, refused its rect
+        bool floating = false;   // user toggle, no sizing border, refused its rect
         bool overflow = false;   // floated only for lack of room; retried every rescan
         bool pinned = false;     // floating, never hidden, follows the active workspace
         hider::Method hidden = hider::Method::None; // how WE hid it; None = on screen
         int hideFailures = 0;    // cloak refusals; 3 -> this window uses Minimize
+        bool showFailed = false; // warned once; see showWindow()
         bool wasTopmost = false; // pinned + pinnedTopmost: the flag before we set it
         QRect assigned;          // tiled only: last rect we asked for, physical px
         QRect original;          // geometry at adoption, restored on release
         int rejections = 0;
-        // GetWindowPlacement, not GetWindowRect: a window already maximized
-        // at adoption would otherwise remember the maximized rect. Persisted,
-        // and all a recovered entry's `original` has left to go on.
-        int placementShowCmd = 1; // GetWindowPlacement's showCmd; 1 == SW_SHOWNORMAL
-        QRect placementNormal;    // rcNormalPosition at adoption, physical px
+        // rcNormalPosition, not GetWindowRect: a window already maximized at
+        // adoption would otherwise remember the maximized rect. Screen px
+        // (see adoptOne). Persisted, and all a recovered entry's `original`
+        // has left to go on.
+        QRect placementNormal;
         // The state file's identity check, read once at adoption:
         // saveStateNow() runs in front of every hide/show batch, where two
         // OpenProcess calls per window would be real latency on a workspace
@@ -220,6 +224,12 @@ private:
     static bool isTiledEntry(const Managed &m)
     {
         return !m.floating && !m.overflow && !m.pinned;
+    }
+    // Whether `m` should currently be on screen: pinned windows always are,
+    // everything else only on its monitor's active workspace.
+    bool belongsOnScreen(const Managed &m) const
+    {
+        return m.pinned || m.workspace == m_active.value(m.device, 0);
     }
     static QString keyOf(const Managed &m);
 
@@ -279,9 +289,10 @@ private:
     // Hides `id` and records how. A cloak failure bumps hideFailures and
     // falls back to Minimize for this call. No-op if already hidden.
     void hideWindow(quintptr id);
-    // Shows `id` by the method recorded in Managed::hidden. No-op if not
-    // hidden.
-    void showWindow(quintptr id);
+    // Shows `id` by the method recorded in Managed::hidden. False if that
+    // failed; `hidden` is kept so rescan() retries it instead of releasing a
+    // still-cloaked window as the OS's.
+    bool showWindow(quintptr id);
     // Every managed window hidden iff its workspace is not its monitor's
     // active one and it is not pinned. For the two places that move windows
     // and the active index in one go - recovery, and a workspaceCount shrink
@@ -310,18 +321,25 @@ private:
     // recovered set waits in m_pendingRecovered until the first
     // setEnabled(true) claims it, or m_pendingTimer's 5 s deadline gives up.
     void recoverState();
-    // Shows every one of `entries` that WE hid, restores topmost and deletes
-    // the state file - the answer to a file that cannot be trusted, rather
-    // than guessing which half of it to keep. Works from raw HWNDs and a
-    // handed-in `active`: nothing is in m_windows yet when recoverState()
-    // calls it.
+    // Shows every one of `entries` that WE hid and restores topmost - the
+    // answer to a file that cannot be trusted, rather than guessing which
+    // half of it to keep. Whatever fails to show goes back into m_windows and
+    // m_pendingRecovered for another round; the state file is deleted only
+    // once nothing is left pending. Works from raw HWNDs and a handed-in
+    // `active`: nothing is in m_windows yet when recoverState() calls it.
     void abandonRecovery(const QList<tilingstate::Entry> &entries,
                          const QHash<QString, int> &active);
     // m_pendingTimer's timeout: something was recovered, but 5 s later the
     // tiler has still never been enabled ("enabled": false, most likely).
-    // Shows and forgets the pending set, so a disabled tiler can never strand
-    // a cloaked window.
+    // Shows the pending set; whatever fails to show stays pending and the
+    // timer restarts, so a disabled tiler can never strand a cloaked window.
     void abandonPending();
+    // For a teardown that could not show everything: keeps only `unshown` in
+    // m_windows, on workspace 0 with the trees and active map cleared (so
+    // each belongs on screen and rescan()'s retries reseat it), and writes a
+    // state file naming only them - or removes the file if `unshown` is
+    // empty.
+    void retainUnshown(const QVector<quintptr> &unshown);
 
     bool m_enabled = false;
     int m_gap = 16;
@@ -338,6 +356,10 @@ private:
     bool m_pinnedTopmost = false;
 
     QHash<quintptr, Managed> m_windows;
+    // Floated on purpose (user toggle, refused its rect), by HWND: a
+    // minimize releases the Managed entry and the restore re-adopts it
+    // fresh. Pruned of dead handles in rescan().
+    QSet<quintptr> m_stickyFloat;
     QHash<QString, layout::Tree *> m_trees;   // key "device|workspace"; TILED members only
     QHash<QString, int> m_active;             // device -> active workspace index
     QHash<QString, quintptr> m_lastFocusedIn; // tree key -> last focused member
@@ -346,8 +368,11 @@ private:
     // notifyWorkspacesIfChanged().
     QString m_workspacesSignature;
 
-    // The ids recoverState() already put in m_windows, until setEnabled(true)
-    // claims them or abandonPending() undoes them. Empty the rest of the time.
+    // Ids waiting to be shown: what recoverState() put in m_windows, or what
+    // a teardown (setEnabled(false), abandonPending, abandonRecovery) failed
+    // to show and retainUnshown() kept. Claimed by the next setEnabled(true),
+    // or retried every m_pendingTimer tick while nothing enables the tiler.
+    // Empty the rest of the time.
     QVector<quintptr> m_pendingRecovered;
     QTimer m_pendingTimer;
 

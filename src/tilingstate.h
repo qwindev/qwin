@@ -30,8 +30,7 @@ struct Entry {
                            // string - 57 bits does not survive a double.
     QString windowClass;
     QString hidden;        // "none" | "cloak" | "minimize"
-    int placementShowCmd = 1; // GetWindowPlacement showCmd at adoption (1 == SW_SHOWNORMAL)
-    QRect placementNormal; // rcNormalPosition at adoption, physical px
+    QRect placementNormal; // rcNormalPosition at adoption, screen px
     bool wasTopmost = false;
     QString monitor;       // szDevice
     int workspace = 0;
@@ -65,7 +64,8 @@ bool save(const Snapshot &snapshot);
 // again.
 enum class LoadResult {
     Ok,      // trustworthy: recover from it
-    Salvage, // parsed, not trustworthy: un-hide what it still names, then delete it
+    Salvage, // parsed, not trustworthy: un-hide what it still names, deleted once
+             // nothing named in it is left pending
     None,    // no file, or nothing readable in it
 };
 

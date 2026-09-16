@@ -347,24 +347,32 @@ TilingApi::~TilingApi()
             UnhookWinEvent(static_cast<HWINEVENTHOOK>(hook));
     }
 
-    // Records the show before doing it: the file must never claim a window is
-    // hidden when it is already back on screen.
-    saveStateNow();
+    // Nothing of ours to show or save - and if an earlier failed teardown
+    // left the state file naming windows still hidden, a clean exit must not
+    // touch it; recoverState() picks it up on the next launch.
+    if (!m_windows.isEmpty()) {
+        // Records the show before doing it: the file must never claim a
+        // window is hidden when it is already back on screen.
+        saveStateNow();
 
-    m_applying = true;
-    for (auto it = m_windows.begin(); it != m_windows.end(); ++it) {
-        showWindow(it.key());
-        if (it->pinned && !it->wasTopmost) {
-            SetWindowPos(toHwnd(it.key()), HWND_NOTOPMOST, 0, 0, 0, 0,
-                         SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+        m_applying = true;
+        QVector<quintptr> unshown;
+        for (auto it = m_windows.begin(); it != m_windows.end(); ++it) {
+            if (!showWindow(it.key()))
+                unshown.append(it.key());
+            if (it->pinned && !it->wasTopmost) {
+                SetWindowPos(toHwnd(it.key()), HWND_NOTOPMOST, 0, 0, 0, 0,
+                             SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+            }
         }
-    }
-    m_applying = false;
+        m_applying = false;
 
-    // Everything is back on screen, so there is nothing left to recover. Only
-    // a clean tray quit reaches here; a forced kill is what recoverState() is
-    // for.
-    tilingstate::remove();
+        // Only a clean tray quit reaches here; a forced kill is what
+        // recoverState() is for. retainUnshown() deletes the state file when
+        // everything came back, else keeps just what did not for the next
+        // launch to retry.
+        retainUnshown(unshown);
+    }
 
     // Geometry is deliberately left as it is: a mass re-shuffle as the host
     // exits is more startling than a tidy desktop is useful.
@@ -389,7 +397,12 @@ void TilingApi::setEnabled(bool enabled)
             // the safety net that would otherwise undo it.
             m_pendingTimer.stop();
             qInfo() << "Tiler: claiming" << m_pendingRecovered.size()
-                    << "window(s) recovered from a previous session";
+                    << "pending window(s)";
+            for (quintptr id : std::as_const(m_pendingRecovered)) {
+                const auto it = m_windows.constFind(id);
+                if (it != m_windows.constEnd() && it->floating && !it->pinned)
+                    m_stickyFloat.insert(id); // survive its first minimize too
+            }
             m_pendingRecovered.clear();
         }
         m_sweepTimer.start();
@@ -403,8 +416,10 @@ void TilingApi::setEnabled(bool enabled)
         saveStateNow(); // see the destructor for why this goes first
 
         m_applying = true;
+        QVector<quintptr> unshown;
         for (auto it = m_windows.begin(); it != m_windows.end(); ++it) {
-            showWindow(it.key());
+            if (!showWindow(it.key()))
+                unshown.append(it.key());
             if (it->pinned && !it->wasTopmost) {
                 SetWindowPos(toHwnd(it.key()), HWND_NOTOPMOST, 0, 0, 0, 0,
                              SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -412,17 +427,22 @@ void TilingApi::setEnabled(bool enabled)
         }
         m_applying = false;
 
-        // Back on screen, so nothing left to recover.
-        tilingstate::remove();
-
         const QList<quintptr> ids = m_windows.keys();
-        for (quintptr id : ids)
-            releaseWindow(id, true);
-        qDeleteAll(m_trees);
-        m_trees.clear();
-        m_windows.clear();
-        m_active.clear();
-        m_lastFocusedIn.clear();
+        for (quintptr id : ids) {
+            if (!unshown.contains(id))
+                releaseWindow(id, true);
+        }
+        retainUnshown(unshown);
+        // Whatever would not show stays pending, as a recovered window does:
+        // the next enable claims it, m_pendingTimer retries it meanwhile.
+        m_pendingRecovered = unshown;
+        if (!unshown.isEmpty())
+            m_pendingTimer.start();
+
+        // Its dead-handle prune only runs in rescan(), so while disabled a
+        // recycled HWND could inherit a stale float; forgotten like the rest
+        // of what disabling forgets.
+        m_stickyFloat.clear();
         m_lastVisibleCount = 0; // nothing tiled; keep the diff below honest
     }
     emit enabledChanged();
@@ -758,6 +778,11 @@ void TilingApi::switchToWorkspace(int index)
 {
     if (!m_enabled)
         return;
+    // Brings the foreground window's recorded monitor - and m_focusedDevice
+    // with it - up to date before the chord acts: a monitor-only move (a
+    // drag, Win+Shift+Arrow) fires no event that would otherwise do it, and
+    // it would sit stale until the next sweep.
+    rescan();
     switchWorkspace(focusedDevice(), index);
 }
 
@@ -792,6 +817,7 @@ void TilingApi::moveToWorkspace(int index, bool follow)
 {
     if (!m_enabled)
         return;
+    rescan();
     HWND fg = GetForegroundWindow();
     if (!fg)
         return;
@@ -802,6 +828,7 @@ void TilingApi::moveToEmptyWorkspace()
 {
     if (!m_enabled)
         return;
+    rescan();
     HWND fg = GetForegroundWindow();
     if (!fg)
         return;
@@ -843,6 +870,7 @@ void TilingApi::togglePinned()
 
     if (it->pinned) {
         it->pinned = false;
+        m_stickyFloat.insert(toId(fg)); // stays floating; survive a minimize too
         if (!it->wasTopmost) {
             SetWindowPos(fg, HWND_NOTOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -1051,12 +1079,18 @@ void TilingApi::migrateWindow(quintptr id, const QString &newDevice, int newWork
         return;
     const QString oldKey = keyOf(it.value());
     const bool tiled = isTiledEntry(it.value());
+    const bool wasFocused = it->device != newDevice && toHwnd(id) == GetForegroundWindow();
     if (tiled) {
         if (layout::Tree *tree = m_trees.value(oldKey))
             tree->remove(id);
     }
     it->device = newDevice;
     it->workspace = newWorkspace;
+    if (wasFocused) {
+        // Moving the foreground window to another monitor (a drag,
+        // Win+Shift+Arrow) fires no FOREGROUND event.
+        m_focusedDevice = newDevice;
+    }
     if (tiled) {
         const QString newKey = keyOf(it.value());
         layout::Tree *tree = treeFor(newKey);
@@ -1076,6 +1110,15 @@ void TilingApi::rescan()
 {
     if (!m_enabled)
         return;
+
+    // HWNDs are recycled: without this, a fresh window that happens to reuse
+    // a stale handle would be adopted floating for no reason of its own.
+    for (auto it = m_stickyFloat.begin(); it != m_stickyFloat.end(); ) {
+        if (!IsWindow(toHwnd(*it)))
+            it = m_stickyFloat.erase(it);
+        else
+            ++it;
+    }
 
     // Acquisition is lazy and can drop when explorer.exe restarts; this is
     // the only place that runs often enough to notice. The non-acquiring
@@ -1112,10 +1155,12 @@ void TilingApi::rescan()
 
         // Onto whatever workspace its monitor is showing right now. Fixed-size
         // windows (no sizing border: dialogs, installers, splashes) float
-        // rather than tile, as do the configured floatProcesses.
+        // rather than tile, as do the configured floatProcesses and anything
+        // in m_stickyFloat.
         const int workspace = m_active.value(device, 0);
         const bool floating = !(GetWindowLongPtrW(hwnd, GWL_STYLE) & WS_THICKFRAME)
-                            || floatProcessMatches(processNameFor(hwnd));
+                            || floatProcessMatches(processNameFor(hwnd))
+                            || m_stickyFloat.contains(id);
 
         newInfo.insert(hwnd, { device, workspace, floating });
         if (floating)
@@ -1151,13 +1196,19 @@ void TilingApi::rescan()
         if (GetWindowRect(hwnd, &r))
             entry.original = toRect(r); // geometry at adoption, restored on release
 
-        // For the state file (see Managed::placementNormal); every restore
-        // path but recovery uses `original` above.
+        // For the state file; every restore path but recovery uses
+        // `original`. rcNormalPosition is in workspace coordinates (screen
+        // minus the work area's inset), converted here while that inset is
+        // current: at recovery our own AppBar may not be registered yet.
         WINDOWPLACEMENT wp = {};
         wp.length = sizeof(wp);
         if (GetWindowPlacement(hwnd, &wp)) {
-            entry.placementShowCmd = int(wp.showCmd);
-            entry.placementNormal = toRect(wp.rcNormalPosition);
+            QRect normal = toRect(wp.rcNormalPosition);
+            MONITORINFO mi = {};
+            mi.cbSize = sizeof(mi);
+            if (GetMonitorInfoW(MonitorFromRect(&wp.rcNormalPosition, MONITOR_DEFAULTTONEAREST), &mi))
+                normal.translate(mi.rcWork.left - mi.rcMonitor.left, mi.rcWork.top - mi.rcMonitor.top);
+            entry.placementNormal = normal;
         }
 
         // Also for the state file, also read once: deriving these in
@@ -1206,6 +1257,9 @@ void TilingApi::rescan()
     // put it back down if it does not.
     QVector<quintptr> toReveal;
     QVector<quintptr> toRehide;
+    // Recorded hidden but should be showing: a show() that failed (explorer
+    // mid-restart) or a migrate below onto the survivor's active workspace.
+    QVector<quintptr> toShow;
     // Which monitors exist, rather than where a window sits: a minimized one
     // is at an off-screen iconic rect, so MonitorFromWindow would name the
     // nearest survivor and migrate it for no reason.
@@ -1246,21 +1300,33 @@ void TilingApi::rescan()
             const bool stillHidden = it->hidden == hider::Method::Cloak
                                     ? hider::isCloaked(hwnd) : IsIconic(hwnd) != 0;
             if (!stillHidden) {
-                if (hwnd == GetForegroundWindow())
+                if (hwnd == GetForegroundWindow()) {
                     toReveal.append(id);
-                else
-                    toRehide.append(id);
-            } else if (!liveAreas.contains(it->device)) {
-                // Its monitor is gone (a dock unplugged while it sat on an
-                // inactive workspace). The visible branch above never runs
-                // for a hidden window, so without this it stays cloaked on a
-                // monitor no workspace can reach. The index is kept, so it
-                // stays hidden exactly where it was put.
-                const QString device = deviceForWindow(hwnd);
-                if (!device.isEmpty() && device != it->device) {
-                    migrateWindow(id, device, it->workspace);
+                } else if (belongsOnScreen(it.value())) {
+                    // Back on screen by some other hand, and belongs there:
+                    // record it; the retile places it.
+                    it->hidden = hider::Method::None;
                     changed = true;
+                } else {
+                    toRehide.append(id);
                 }
+            } else {
+                if (!liveAreas.contains(it->device)) {
+                    // Its monitor is gone (a dock unplugged while it sat on an
+                    // inactive workspace). The visible branch above never runs
+                    // for a hidden window, so without this it stays cloaked on a
+                    // monitor no workspace can reach. The index is kept, so it
+                    // stays hidden exactly where it was put.
+                    const QString device = deviceForWindow(hwnd);
+                    if (!device.isEmpty() && device != it->device) {
+                        migrateWindow(id, device, it->workspace);
+                        changed = true;
+                    }
+                }
+                // After the migrate above: it may have landed on the active
+                // workspace.
+                if (belongsOnScreen(it.value()))
+                    toShow.append(id);
             }
         }
     }
@@ -1283,14 +1349,41 @@ void TilingApi::rescan()
     }
 
     if (!toRehide.isEmpty()) {
+        // Re-checked at processing time: toReveal above may have switched
+        // one of these ids onto the workspace it just became active on.
+        QVector<quintptr> stillToHide;
         for (quintptr id : toRehide) {
-            if (auto it = m_windows.find(id); it != m_windows.end())
-                it->hidden = hider::Method::None; // caught up; hideWindow() re-applies
+            auto it = m_windows.find(id);
+            if (it == m_windows.end())
+                continue;
+            it->hidden = hider::Method::None; // caught up; hideWindow() re-applies
+            if (!belongsOnScreen(it.value()))
+                stillToHide.append(id);
         }
-        saveStateNow();
+        if (!stillToHide.isEmpty()) {
+            saveStateNow();
+            m_applying = true;
+            for (quintptr id : stillToHide)
+                hideWindow(id);
+            m_applying = false;
+        }
+    }
+
+    if (!toShow.isEmpty()) {
+        // No saveStateNow() first: the file already names these hidden by us
+        // and recovery reads live cloak state, so a write per pass while
+        // explorer is down buys nothing.
+        const bool cloakUp = hider::cloakAvailable(); // one acquire attempt for the batch
         m_applying = true;
-        for (quintptr id : toRehide)
-            hideWindow(id);
+        for (quintptr id : toShow) {
+            auto it = m_windows.find(id);
+            if (it == m_windows.end() || !belongsOnScreen(it.value()))
+                continue; // toReveal above may have moved the active workspace
+            if ((it->hidden == hider::Method::Cloak && !cloakUp) || !IsWindowVisible(toHwnd(id)))
+                continue; // explorer not back yet, or the app hid it itself: a later pass retries
+            if (showWindow(id))
+                changed = true;
+        }
         m_applying = false;
     }
 
@@ -1390,6 +1483,7 @@ void TilingApi::sweep()
         it->floating = true;
         it->overflow = false;
         it->rejections = 0;
+        m_stickyFloat.insert(id);
     }
 
     if (m_debug) {
@@ -1582,14 +1676,18 @@ void TilingApi::onMoveSizeEnd(void *hwnd)
     if (state == m_windows.constEnd())
         return; // not ours
 
+    if (deviceForWindow(hwnd) != state->device) {
+        rescan(); // dragged onto another monitor: re-home it, floating or not
+        return;
+    }
+
     if (state->floating || state->overflow || state->pinned)
         return; // nothing tiled to resize or swap
 
     const QString key = keyOf(state.value());
     layout::Tree *tree = m_trees.value(key);
-    const QString actualDevice = deviceForWindow(hwnd);
-    if (!tree || !tree->contains(id) || actualDevice != state->device) {
-        rescan(); // dragged onto another monitor: re-home it
+    if (!tree || !tree->contains(id)) {
+        rescan(); // out of sync with its tree somehow; re-home it
         return;
     }
 
@@ -1659,22 +1757,34 @@ void TilingApi::hideWindow(quintptr id)
         return;
     }
     it->hidden = method;
+    it->showFailed = false; // a fresh hide starts a fresh warn-once cycle
 }
 
-void TilingApi::showWindow(quintptr id)
+bool TilingApi::showWindow(quintptr id)
 {
     const auto it = m_windows.find(id);
     if (it == m_windows.end() || it->hidden == hider::Method::None)
-        return;
-    hider::show(toHwnd(id), it->hidden);
+        return true; // nothing to do
+    if (!hider::show(toHwnd(id), it->hidden)) {
+        if (!it->showFailed) {
+            it->showFailed = true;
+            qWarning() << "Tiler:" << describe(id) << "failed to show - leaving it hidden";
+        }
+        return false;
+    }
+    if (it->showFailed) {
+        it->showFailed = false;
+        qInfo() << "Tiler:" << describe(id) << "shown on retry";
+    }
     it->hidden = hider::Method::None;
+    return true;
 }
 
 void TilingApi::reconcileHidden()
 {
     QVector<quintptr> toShow, toHide;
     for (auto it = m_windows.constBegin(); it != m_windows.constEnd(); ++it) {
-        const bool shouldHide = it->workspace != m_active.value(it->device, 0) && !it->pinned;
+        const bool shouldHide = !belongsOnScreen(it.value());
         if (shouldHide && it->hidden == hider::Method::None)
             toHide.append(it.key());
         else if (!shouldHide && it->hidden != hider::Method::None)
@@ -1726,7 +1836,6 @@ void TilingApi::saveStateNow()
         e.created = it->created;
         e.windowClass = it->windowClass;
         e.hidden = hiderMethodToString(it->hidden);
-        e.placementShowCmd = it->placementShowCmd;
         e.placementNormal = it->placementNormal;
         e.wasTopmost = it->wasTopmost;
         e.monitor = it->device;
@@ -1748,6 +1857,7 @@ void TilingApi::abandonRecovery(const QList<tilingstate::Entry> &entries,
                                  const QHash<QString, int> &active)
 {
     m_applying = true;
+    QVector<quintptr> unshown;
     for (const tilingstate::Entry &e : entries) {
         HWND hwnd = toHwnd(e.hwnd);
         if (!IsWindow(hwnd))
@@ -1758,10 +1868,35 @@ void TilingApi::abandonRecovery(const QList<tilingstate::Entry> &entries,
             return (!e.pinned && e.workspace != active.value(e.monitor, 0))
                 || hiderMethodFromString(e.hidden) == how;
         };
-        if (hider::isCloaked(hwnd) && ours(hider::Method::Cloak))
-            hider::show(hwnd, hider::Method::Cloak);
-        else if (IsIconic(hwnd) && ours(hider::Method::Minimize))
-            hider::show(hwnd, hider::Method::Minimize);
+        hider::Method attempted = hider::Method::None;
+        bool shown = true;
+        if (hider::isCloaked(hwnd) && ours(hider::Method::Cloak)) {
+            attempted = hider::Method::Cloak;
+            shown = hider::show(hwnd, hider::Method::Cloak);
+        } else if (IsIconic(hwnd) && ours(hider::Method::Minimize)) {
+            attempted = hider::Method::Minimize;
+            shown = hider::show(hwnd, hider::Method::Minimize);
+        }
+        if (!shown) {
+            // Couldn't undo the hide - m_windows is empty this early (only
+            // recoverState() calls this, from the ctor), so track it there
+            // for rescan()'s toShow retry to pick up once something enables
+            // the tiler.
+            Managed m;
+            m.device = e.monitor;
+            m.hidden = attempted;
+            m.pid = e.pid;
+            m.created = e.created;
+            m.windowClass = e.windowClass;
+            m.floating = e.floating;
+            m.pinned = e.pinned;
+            m.wasTopmost = e.wasTopmost;
+            m.placementNormal = e.placementNormal;
+            m.original = e.placementNormal;
+            m.showFailed = true;
+            m_windows.insert(e.hwnd, m);
+            unshown.append(e.hwnd);
+        }
         if (e.pinned && !e.wasTopmost) {
             SetWindowPos(hwnd, HWND_NOTOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -1769,8 +1904,10 @@ void TilingApi::abandonRecovery(const QList<tilingstate::Entry> &entries,
     }
     m_applying = false;
 
-    // Everything it named is back on screen; nothing left worth reading.
-    tilingstate::remove();
+    retainUnshown(unshown);
+    m_pendingRecovered = unshown;
+    if (!unshown.isEmpty())
+        m_pendingTimer.start();
 }
 
 void TilingApi::abandonPending()
@@ -1778,16 +1915,33 @@ void TilingApi::abandonPending()
     if (m_pendingRecovered.isEmpty())
         return; // already claimed by setEnabled(true), or nothing was recovered
 
-    qInfo() << "Tiler: never enabled within" << kPendingTimeoutMs / 1000
-            << "s of recovering" << m_pendingRecovered.size()
-            << "window(s) - showing and forgetting them";
+    // Only a genuine first abandon is worth a log line; on a retry every
+    // pending entry already carries showFailed from the previous round, and
+    // repeating it every 5 s while explorer stays down would just be noise.
+    bool freshAbandon = false;
+    for (quintptr id : std::as_const(m_pendingRecovered)) {
+        const auto it = m_windows.constFind(id);
+        if (it != m_windows.constEnd() && !it->showFailed) {
+            freshAbandon = true;
+            break;
+        }
+    }
+    if (freshAbandon) {
+        qInfo() << "Tiler: never enabled within" << kPendingTimeoutMs / 1000
+                << "s of recovering" << m_pendingRecovered.size()
+                << "window(s) - showing them";
+    }
 
     m_applying = true;
+    QVector<quintptr> unshown;
     for (quintptr id : std::as_const(m_pendingRecovered)) {
         const auto it = m_windows.find(id);
         if (it == m_windows.end())
-            continue;
-        showWindow(id);
+            continue; // released some other way already
+        if (!IsWindow(toHwnd(id)))
+            continue; // gone; counts as shown - nothing left to retry
+        if (!showWindow(id))
+            unshown.append(id);
         if (it->pinned && !it->wasTopmost) {
             SetWindowPos(toHwnd(id), HWND_NOTOPMOST, 0, 0, 0, 0,
                          SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
@@ -1795,12 +1949,35 @@ void TilingApi::abandonPending()
     }
     m_applying = false;
 
+    retainUnshown(unshown);
+    m_pendingRecovered = unshown;
+    if (!unshown.isEmpty())
+        m_pendingTimer.start(); // retry every 5 s while nothing enables the tiler
+}
+
+void TilingApi::retainUnshown(const QVector<quintptr> &unshown)
+{
     qDeleteAll(m_trees);
     m_trees.clear();
-    m_windows.clear();
     m_active.clear();
-    m_pendingRecovered.clear();
-    tilingstate::remove(); // nothing left to recover
+    m_lastFocusedIn.clear();
+
+    for (auto it = m_windows.begin(); it != m_windows.end(); ) {
+        if (unshown.contains(it.key()))
+            ++it;
+        else
+            it = m_windows.erase(it);
+    }
+    for (auto it = m_windows.begin(); it != m_windows.end(); ++it) {
+        it->workspace = 0; // m_active is empty now, so 0 means "belongs on screen"
+        if (isTiledEntry(it.value()))
+            it->overflow = true; // its tree is gone; the overflow retry reseats it
+    }
+
+    if (unshown.isEmpty())
+        tilingstate::remove();
+    else
+        saveStateNow();
 }
 
 void TilingApi::recoverState()
@@ -1843,7 +2020,7 @@ void TilingApi::recoverState()
         // genuine reboot nothing survives it, so nothing is touched.
         qWarning().noquote() << "Tiler: not recovering -" << why << "- showing"
                              << valid.size() << "window(s) it still names";
-        abandonRecovery(valid, snapshot.active); // deletes the file either way
+        abandonRecovery(valid, snapshot.active); // shows what it can, retries the rest
         return;
     }
     if (valid.isEmpty()) {
@@ -1881,7 +2058,6 @@ void TilingApi::recoverState()
         m.floating = e.floating;
         m.pinned = e.pinned;
         m.wasTopmost = e.wasTopmost;
-        m.placementShowCmd = e.placementShowCmd;
         m.placementNormal = e.placementNormal;
         // The next launch identity-checks this window by these; dropping them
         // would write an entry it would refuse to recognise, and a window we
@@ -2083,10 +2259,10 @@ void TilingApi::toggleFloating()
     if (it->pinned)
         return; // togglePinned() is the command for a pinned window
 
-    if (it->floating || it->overflow) {
+    if (it->floating) {
         // Rejoin the tiled layout.
         it->floating = false;
-        it->overflow = false;
+        m_stickyFloat.remove(id);
         const QString key = keyOf(it.value());
         layout::Metrics metrics;
         if (metricsForKey(it->device, &metrics)) {
@@ -2098,12 +2274,23 @@ void TilingApi::toggleFloating()
         } else {
             it->overflow = true;
         }
+    } else if (it->overflow) {
+        // Floating only for lack of room so far - make that the user's
+        // decision instead, so it stops being reclaimed the moment something
+        // else closes. Already floating where it sits, so no geometry to
+        // restore.
+        it->overflow = false;
+        it->floating = true;
+        it->assigned = QRect();
+        it->rejections = 0;
+        m_stickyFloat.insert(id);
     } else {
         // Leave the layout, restoring the size it had when adopted.
         const QString key = keyOf(it.value());
         if (layout::Tree *tree = m_trees.value(key))
             tree->remove(id);
         it->floating = true;
+        m_stickyFloat.insert(id);
         // Forget the tile rect with the tile: it is what the sweep would
         // otherwise keep dragging this window back to.
         it->assigned = QRect();

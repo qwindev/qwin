@@ -182,7 +182,7 @@ chords to the commands; `plugins/workspaces` is the bar-facing switcher.
 
 | Member | Description |
 |---|---|
-| `Tiler.enabled` | Read/write master switch. Disabling shows every hidden window, releases every managed window (restoring its pre-adoption geometry) and deletes the state file. |
+| `Tiler.enabled` | Read/write master switch. Disabling shows every hidden window and releases each one that came back (restoring its pre-adoption geometry); the state file is deleted once everything is shown, or kept and retried if a window would not come back. |
 | `Tiler.gap` / `Tiler.outerGap` | Gap between tiles / to the work-area edge, logical px. |
 | `Tiler.minWidth` / `Tiler.minHeight` | Smallest tile a split may create, logical px. A window that cannot be placed without breaking these stays floating and is reclaimed once room frees up. |
 | `Tiler.resizeStep` | How far one `resize()` call moves a divider, logical px. |
@@ -198,7 +198,7 @@ chords to the commands; `plugins/workspaces` is the bar-facing switcher.
 | `Tiler.focusDirection(dir)` | Focus the neighbouring window: `"left"`, `"right"`, `"up"`, `"down"`. |
 | `Tiler.moveDirection(dir)` | Swap the focused window with its neighbour in that direction. |
 | `Tiler.resize(how)` | Move the divider nearest the focused window: `"wider"`, `"narrower"`, `"taller"`, `"shorter"`. |
-| `Tiler.toggleFloating()` | Take the focused window out of the layout (restoring its adopted size), or put it back in. |
+| `Tiler.toggleFloating()` | Take the focused window out of the layout (restoring its adopted size), or put it back in. On a window floating only for lack of room, makes that the user's choice instead, so it is no longer reclaimed the moment room frees up. A float survives a minimize. |
 | `Tiler.toggleSplit()` | Flip the split that placed the focused window — the one-key fix for a dwindle that divided the wrong way. |
 | `Tiler.equalize()` | Forget every resize on the focused window's monitor. |
 | `Tiler.retile()` | Re-apply the layout now. |
@@ -245,13 +245,15 @@ tiler refuses to trust would be the one thing that could strand a window
 cloaked. A structurally broken one
 (a workspace tree or window list that doesn't add up) is abandoned the same
 way — everything it named that was hidden is shown again, and the file is
-deleted rather than trusted a second time.
+deleted once every one of them came back (whatever doesn't stays pending and
+is retried, same as a normal recovery).
 Recovered windows are held pending until the plugin's own `enabled` binding
 switches the tiler on, so a profile that starts with tiling disabled can
-never leave one stranded cloaked — a 5 s timeout shows and forgets them if
-that never happens. A clean exit (tray Quit — killing the process directly
-skips this) shows and un-topmosts everything the tiler hid and deletes the
-file, since there is then nothing left to recover.
+never leave one stranded cloaked — if that never happens, a 5 s timeout
+shows them instead, retrying any that will not come back. A clean exit (tray Quit —
+killing the process directly skips this) shows and un-topmosts everything the
+tiler hid and deletes the file once everything came back; anything that
+would not is left for the next launch to finish.
 
 ## Wifi
 

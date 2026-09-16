@@ -17,7 +17,8 @@ namespace tilingstate {
 
 namespace {
 
-constexpr int kVersion = 1;
+// 2: "placement" is screen px; 1 stored raw workspace coordinates.
+constexpr int kVersion = 2;
 constexpr qint64 kBootToleranceSecs = 60;
 
 QString statePath()
@@ -63,7 +64,6 @@ QJsonObject entryToJson(const Entry &e)
         { QStringLiteral("class"), e.windowClass },
         { QStringLiteral("hidden"), e.hidden },
         { QStringLiteral("placement"), QJsonObject{
-              { QStringLiteral("showCmd"), e.placementShowCmd },
               { QStringLiteral("x"), e.placementNormal.x() },
               { QStringLiteral("y"), e.placementNormal.y() },
               { QStringLiteral("w"), e.placementNormal.width() },
@@ -86,7 +86,6 @@ Entry entryFromJson(const QJsonObject &w)
     e.windowClass = w.value(QStringLiteral("class")).toString();
     e.hidden = w.value(QStringLiteral("hidden")).toString();
     const QJsonObject placement = w.value(QStringLiteral("placement")).toObject();
-    e.placementShowCmd = placement.value(QStringLiteral("showCmd")).toInt(1);
     e.placementNormal = QRect(placement.value(QStringLiteral("x")).toInt(),
                                placement.value(QStringLiteral("y")).toInt(),
                                placement.value(QStringLiteral("w")).toInt(),
