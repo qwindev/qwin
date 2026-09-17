@@ -41,4 +41,34 @@ inline QHash<QString, QRect> workAreas()
     return out;
 }
 
+// The desktop itself: Progman, or the WorkerW that hosts the icons instead
+// while a wallpaper slideshow runs. Both span the whole virtual desktop, so
+// MonitorFromWindow on one says nothing about which monitor the user means.
+inline bool isDesktopWindow(HWND hwnd)
+{
+    if (!hwnd)
+        return false;
+    if (hwnd == GetShellWindow())
+        return true;
+    wchar_t cls[32] = {};
+    const int n = GetClassNameW(hwnd, cls, 32);
+    const QString name = QString::fromWCharArray(cls, n);
+    return name == QLatin1String("Progman") || name == QLatin1String("WorkerW");
+}
+
+// The monitor the mouse is over right now, or empty if the cursor or its
+// monitor could not be read. Shared by focusedDevice()'s fallback and the
+// desktop-window case in onForegroundChanged().
+inline QString deviceUnderCursor()
+{
+    POINT pt = {};
+    if (!GetCursorPos(&pt))
+        return QString();
+    MONITORINFOEXW mi = {};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY), &mi))
+        return QString();
+    return QString::fromWCharArray(mi.szDevice);
+}
+
 } // namespace tiling

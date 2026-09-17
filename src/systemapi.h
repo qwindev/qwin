@@ -3,6 +3,7 @@
 #include <QObject>
 #include <QString>
 #include <QTimer>
+#include <QVariantList>
 
 // The `System` QML singleton. Stats refresh once per second.
 class SystemApi : public QObject
@@ -11,12 +12,19 @@ class SystemApi : public QObject
     Q_PROPERTY(double cpuUsage READ cpuUsage NOTIFY statsChanged)
     Q_PROPERTY(double memoryUsagePercent READ memoryUsagePercent NOTIFY statsChanged)
     Q_PROPERTY(QString hostname READ hostname CONSTANT)
+    // One map per live monitor, primary first: {device, name, primary}.
+    // `device` is the GDI szDevice - the one identifier PanelWindow.screenName
+    // and Tiler key by - `name` is the friendly QScreen::name(), display only.
+    // This, not Qt.application.screens, is what a per-monitor bar iterates;
+    // see screendevice.h for why Screen.name can never stand in for `device`.
+    Q_PROPERTY(QVariantList screens READ screens NOTIFY screensChanged)
 public:
     explicit SystemApi(const QString &pluginsDir, QObject *parent = nullptr);
 
     double cpuUsage() const { return m_cpuUsage; }
     double memoryUsagePercent() const { return m_memoryUsagePercent; }
     QString hostname() const;
+    QVariantList screens() const;
 
     Q_INVOKABLE QString readTextFile(const QString &path) const;
 
@@ -33,6 +41,7 @@ public:
 
 signals:
     void statsChanged();
+    void screensChanged();
 
 private:
     void updateStats();

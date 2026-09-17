@@ -10,6 +10,7 @@
 #include <QScreen>
 #include <QSet>
 
+#include "screendevice.h"
 #include "tilingapi_p.h"
 
 using namespace tiling;
@@ -26,15 +27,10 @@ QString TilingApi::focusedDevice() const
 {
     if (!m_focusedDevice.isEmpty() && workAreas().contains(m_focusedDevice))
         return m_focusedDevice;
-    POINT pt = {};
-    if (GetCursorPos(&pt)) {
-        MONITORINFOEXW mi = {};
-        mi.cbSize = sizeof(mi);
-        if (GetMonitorInfoW(MonitorFromPoint(pt, MONITOR_DEFAULTTOPRIMARY), &mi))
-            return QString::fromWCharArray(mi.szDevice);
-    }
+    if (const QString cursor = deviceUnderCursor(); !cursor.isEmpty())
+        return cursor;
     if (QScreen *primary = QGuiApplication::primaryScreen())
-        return primary->name();
+        return screendevice::nameOf(primary);
     return QString();
 }
 
@@ -79,9 +75,8 @@ int TilingApi::currentWorkspace() const
     return m_active.value(focusedDevice(), 0);
 }
 
-QVariantList TilingApi::workspaces() const
+QVariantList TilingApi::workspacesFor(const QString &device) const
 {
-    const QString device = focusedDevice();
     const int active = m_active.value(device, 0);
 
     QVector<int> counts(m_workspaceCount, 0);
@@ -102,23 +97,71 @@ QVariantList TilingApi::workspaces() const
     return out;
 }
 
+QVariantList TilingApi::workspaces() const
+{
+    return workspacesFor(focusedDevice());
+}
+
+int TilingApi::tilesOnDevice(const QString &device) const
+{
+    int count = 0;
+    for (auto it = m_windows.constBegin(); it != m_windows.constEnd(); ++it) {
+        if (it->device == device && isTiledEntry(it.value()) && it->hidden == hider::Method::None)
+            ++count;
+    }
+    return count;
+}
+
+QVariantMap TilingApi::monitors() const
+{
+    // Keyed off workAreas() rather than m_active/m_windows, so a monitor with
+    // no active-index entry yet and no windows on it still appears - a bar
+    // on it would otherwise have nothing to bind to.
+    const QString focused = focusedDevice();
+    const QHash<QString, QRect> areas = workAreas();
+    QVariantMap out;
+    for (auto it = areas.constBegin(); it != areas.constEnd(); ++it) {
+        const QString &device = it.key();
+        QVariantMap entry;
+        entry.insert(QStringLiteral("active"), m_active.value(device, 0));
+        entry.insert(QStringLiteral("focused"), device == focused);
+        entry.insert(QStringLiteral("tiles"), tilesOnDevice(device));
+        entry.insert(QStringLiteral("workspaces"), workspacesFor(device));
+        out.insert(device, entry);
+    }
+    return out;
+}
+
 void TilingApi::focusWorkspaceMember(const QString &device, int workspace)
 {
+    // Set here rather than read back from the FOREGROUND event: with no
+    // member to focus the shell gets the keyboard, and that event cannot say
+    // which monitor was meant - see m_shellFocusDevice.
+    const HWND before = GetForegroundWindow();
+    m_focusedDevice = device;
+    m_shellFocusDevice = device;
+
     const QString key = device + QLatin1Char('|') + QString::number(workspace);
     const quintptr target = m_lastFocusedIn.value(key);
-    if (target) {
-        const auto it = m_windows.constFind(target);
-        if (it != m_windows.constEnd() && it->hidden == hider::Method::None) {
-            SetForegroundWindow(toHwnd(target));
-            return;
-        }
+    const auto last = target ? m_windows.constFind(target) : m_windows.constEnd();
+    if (last != m_windows.constEnd() && last->hidden == hider::Method::None) {
+        SetForegroundWindow(toHwnd(target));
+    } else {
+        windowfocus::focusTopmostWindow([this, device, workspace](void *hwnd) {
+            const auto it = m_windows.constFind(toId(hwnd));
+            if (it == m_windows.constEnd())
+                return false;
+            return it->device == device && (it->pinned || it->workspace == workspace);
+        });
     }
-    windowfocus::focusTopmostWindow([this, device, workspace](void *hwnd) {
-        const auto it = m_windows.constFind(toId(hwnd));
-        if (it == m_windows.constEnd())
-            return false;
-        return it->device == device && (it->pinned || it->workspace == workspace);
-    });
+
+    // Only a foreground change TO the desktop has an event coming that needs
+    // the hint. Left set otherwise - the shell already had the keyboard, or
+    // a member took it - it would misdirect the next click on the desktop
+    // of another monitor.
+    const HWND after = GetForegroundWindow();
+    if (after == before || !isDesktopWindow(after))
+        m_shellFocusDevice.clear();
 }
 
 void TilingApi::switchWorkspace(const QString &device, int index)
@@ -157,7 +200,8 @@ void TilingApi::switchWorkspace(const QString &device, int index)
     }
     m_applying = false;
 
-    // Focus explicitly: the foreground window is one we just hid.
+    // Focus explicitly: the foreground window is one we just hid. Also what
+    // keeps this monitor the focused one when `index` is empty.
     focusWorkspaceMember(device, index);
 
     notifyWorkspacesIfChanged();
@@ -174,6 +218,16 @@ void TilingApi::switchToWorkspace(int index)
     // it would sit stale until the next sweep.
     rescan();
     switchWorkspace(focusedDevice(), index);
+}
+
+void TilingApi::switchToWorkspaceOn(const QString &device, int index)
+{
+    if (!m_enabled)
+        return;
+    rescan(); // see switchToWorkspace(): brings monitor-only moves up to date
+    if (!workAreas().contains(device))
+        return;
+    switchWorkspace(device, index);
 }
 
 void TilingApi::moveWindow(quintptr id, int index, bool follow)

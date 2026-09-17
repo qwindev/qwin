@@ -10,6 +10,7 @@
 #include <QScreen>
 #include <QSet>
 
+#include "screendevice.h"
 #include "tilingapi_p.h"
 
 using namespace tiling;
@@ -274,7 +275,7 @@ void TilingApi::recoverState()
 
     const QHash<QString, QRect> areas = workAreas();
     QScreen *primaryScreen = QGuiApplication::primaryScreen();
-    const QString primary = primaryScreen ? primaryScreen->name() : QString();
+    const QString primary = screendevice::nameOf(primaryScreen);
     if (primary.isEmpty()) {
         qWarning() << "Tiler: recovery abandoned - no primary monitor to fall back to";
         abandonRecovery(valid, snapshot.active);

@@ -1,11 +1,15 @@
 #include "systemapi.h"
 
+#include "screendevice.h"
 #include "windowfocus.h"
 
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
+#include <QGuiApplication>
+#include <QScreen>
 #include <QSysInfo>
+#include <QVariantMap>
 #include <QDebug>
 
 #include <windows.h>
@@ -31,11 +35,40 @@ SystemApi::SystemApi(const QString &pluginsDir, QObject *parent)
         emit statsChanged();
     });
     m_timer.start();
+
+    // A monitor plugged/unplugged mid-session, or the primary reassigned,
+    // must reach the bar's Instantiator so it can add/remove/reorder a bar.
+    connect(qApp, &QGuiApplication::screenAdded, this, &SystemApi::screensChanged);
+    connect(qApp, &QGuiApplication::screenRemoved, this, &SystemApi::screensChanged);
+    connect(qApp, &QGuiApplication::primaryScreenChanged, this, &SystemApi::screensChanged);
 }
 
 QString SystemApi::hostname() const
 {
     return QSysInfo::machineHostName();
+}
+
+QVariantList SystemApi::screens() const
+{
+    QVariantList out;
+    QScreen *primary = QGuiApplication::primaryScreen();
+    if (primary) {
+        QVariantMap entry;
+        entry.insert(QStringLiteral("device"), screendevice::nameOf(primary));
+        entry.insert(QStringLiteral("name"), primary->name());
+        entry.insert(QStringLiteral("primary"), true);
+        out.append(entry);
+    }
+    for (QScreen *screen : QGuiApplication::screens()) {
+        if (screen == primary)
+            continue;
+        QVariantMap entry;
+        entry.insert(QStringLiteral("device"), screendevice::nameOf(screen));
+        entry.insert(QStringLiteral("name"), screen->name());
+        entry.insert(QStringLiteral("primary"), false);
+        out.append(entry);
+    }
+    return out;
 }
 
 void SystemApi::updateStats()

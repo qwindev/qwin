@@ -1,11 +1,23 @@
 import QtQuick
+import QtQuick.Window
 import Qwin
 import Qwin.Ui
 
 // Bar module: whether the tiler is on and how many tiles are on screen; a
-// click toggles it. Config and chords live in `plugins/tiling` - without that
+// click toggles it (global - `Tiler.enabled` is a single master switch, not
+// per-monitor). Config and chords live in `plugins/tiling` - without that
 // plugin a click still tiles, but on built-in defaults and with no chords.
+//
+// Inside a PanelWindow, `device` reads the monitor that panel is docked to
+// off `Window.window.device` and the tile count is THAT monitor's, not the
+// whole desktop's; standalone (device empty) it falls back to
+// Tiler.managedCount, as before this property existed.
 Rectangle {
+    id: indicator
+    readonly property string device: (Window.window && Window.window.device) || ""
+    readonly property var mon: Tiler.monitors[device]
+    readonly property int tileCount: mon ? mon.tiles : Tiler.managedCount
+
     width: row.implicitWidth + 14
     height: 24
     radius: 5
@@ -61,7 +73,7 @@ Rectangle {
 
         Text {
             anchors.verticalCenter: parent.verticalCenter
-            text: Tiler.managedCount
+            text: indicator.tileCount
             color: Tiler.enabled ? Colors.accent : Colors.textMuted
             font.family: Theme.fontFamily
             font.pixelSize: 13

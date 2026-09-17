@@ -31,6 +31,13 @@ Plus the [UI components](#ui-components-import-qwinui) from `import Qwin.Ui`.
 | `System.readTextFile(path)` | Returns the file content as a string. Relative paths resolve against the plugins directory; paths escaping the plugins directory (after canonicalization) are rejected and return `""`. |
 | `System.openStartMenu()` | Opens the Windows Start menu, or closes it again — it toggles, like the key it synthesizes (Ctrl+Esc). |
 | `System.rememberFocus()` / `System.restoreFocus()` | Focus bracket for overlays and popups: call `rememberFocus()` before taking the keyboard (showing a popup or overlay), `restoreFocus()` after hiding, so the window the user was working in gets the keyboard back. `Qwin.Ui`'s `Popup` and the bundled `run`/`launcher` overlays use it. |
+| `System.screens` | One entry per live monitor, primary first: `{ device, name, primary }`. `device` is the GDI device name (`\\.\DISPLAY5`) that `PanelWindow.screenName`/`.device` and the `Tiler` singleton key by; `name` is the friendly name (`Screen.name`, display only — see the note below). Updates on `screensChanged` (a monitor plugged/unplugged, or the primary reassigned). |
+
+Iterate `System.screens`, never `Qt.application.screens`, when a plugin needs
+to address a specific monitor: `Screen.name`/`QScreen::name()` return a
+*friendly* name on this host ("LG HDR WQHD"), which is not even unique
+between two identical monitors, and is not the identifier anything else in
+Qwin keys by.
 
 ## Plugins (registry & config)
 
@@ -190,6 +197,17 @@ PanelWindow {
 - The reservation is released automatically when the plugin is removed,
   hot-reloaded, or the app quits.
 
+| Member | Description |
+|---|---|
+| `screenName` | Read/write. The monitor to dock on, as a `device` from [`System.screens`](#system) — never `Screen.name` (a friendly name, not unique, and not what this matches against). Empty (the default) keeps the panel on whatever monitor it ends up on, following it if it moves — today's behaviour before this property existed. |
+| `device` | Read-only. The `device` of the monitor the panel is actually docked on right now (the resolved `screenName`, or the monitor `MonitorFromWindow` answers when `screenName` is empty). Embedded modules read their bar's monitor through `Window.window.device`. |
+
+If `screenName` names a monitor that is not currently plugged in, the panel
+releases its AppBar reservation and waits — it never falls back to another
+monitor, which would otherwise stack a second bar on the primary every time
+the named one is unplugged. It picks the monitor back up automatically if it
+reappears.
+
 ## Service (windowless plugins)
 
 Use `Service` as the plugin root for a plugin that has nothing to show — it
@@ -253,10 +271,15 @@ display modules (on/off + tile count, and the workspace switcher buttons).
 | `Tiler.pinnedTopmost` | Whether a pinned window is also kept above the active workspace's windows (`HWND_TOPMOST`) rather than just following it around. |
 | `Tiler.currentWorkspace` | Active workspace index (0-based) on the focused monitor. |
 | `Tiler.workspaces` | The focused monitor's workspaces: `[{ index, active, windows }]`, where `windows` is the member count. |
+| `Tiler.monitors` | One entry per live monitor, keyed by `device` (so an empty monitor still appears): `{ active, focused, tiles, workspaces }` — `active` that monitor's active workspace index, `focused` whether it is `focusedDevice`, `tiles` its own tile count, `workspaces` exactly the shape the `workspaces` property returns, for that monitor. What a per-monitor bar module binds to instead of the focused-monitor-only properties above. |
+| `Tiler.focusedDevice` | The monitor `switchToWorkspace()` and the workspace properties act on: the foreground window's monitor when it names a real one, else the monitor under the cursor, else the primary screen. |
 | `Tiler.managedCount` | Number of currently tiled, visible windows (`layoutChanged`). |
 | `Tiler.debug` | Log every adoption and every rect applied. Off by default: it is one line per window per re-tile. |
-| `Tiler.focusDirection(dir)` | Focus the neighbouring window: `"left"`, `"right"`, `"up"`, `"down"`. |
-| `Tiler.moveDirection(dir)` | Swap the focused window with its neighbour in that direction. |
+| `Tiler.focusDirection(dir)` | Focus the neighbouring window: `"left"`, `"right"`, `"up"`, `"down"`. At the edge of the focused window's monitor (or when the foreground window is not a tiled member), falls through to `focusMonitor(dir)` — the chord crosses onto the adjacent monitor instead of doing nothing. |
+| `Tiler.moveDirection(dir)` | Swap the focused window with its neighbour in that direction. At the same edge `focusDirection` crosses at, falls through to `moveToMonitor(dir)` instead. |
+| `Tiler.focusMonitor(dir)` | Crosses onto the monitor adjacent to `focusedDevice` in `dir` and focuses its last-focused or topmost member (or the shell, if it has none). No-op if there is no monitor that way. |
+| `Tiler.moveToMonitor(dir)` | Moves the foreground window — if it is one Qwin manages — onto the adjacent monitor in `dir`: tiled there if there is room, otherwise placed at the same relative offset and size (clamped to fit). No-op if there is no monitor that way, or the foreground window is not managed. |
+| `Tiler.switchToWorkspaceOn(device, index)` | Like `switchToWorkspace(index)`, but on `device` instead of `focusedDevice` — for a workspace button clicked on a non-focused monitor's bar. No-op if `device` names no live monitor. |
 | `Tiler.resize(how)` | Move the divider nearest the focused window: `"wider"`, `"narrower"`, `"taller"`, `"shorter"`. |
 | `Tiler.toggleFloating()` | Take the focused window out of the layout (restoring its adopted size), or put it back in. On a window floating only for lack of room, makes that the user's choice instead, so it is no longer reclaimed the moment room frees up. A float survives a minimize. |
 | `Tiler.toggleSplit()` | Flip the split that placed the focused window — the one-key fix for a dwindle that divided the wrong way. |

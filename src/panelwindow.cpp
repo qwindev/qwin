@@ -1,9 +1,13 @@
 #include "panelwindow.h"
 
+#include "screendevice.h"
+
 #include <QAbstractNativeEventFilter>
 #include <QCloseEvent>
 #include <QCoreApplication>
+#include <QGuiApplication>
 #include <QHash>
+#include <QScreen>
 
 #include <windows.h>
 #include <shellapi.h>
@@ -20,6 +24,33 @@ QHash<HWND, PanelWindow *> &appBars()
 {
     static QHash<HWND, PanelWindow *> bars;
     return bars;
+}
+
+struct FindByDevice
+{
+    const QString *device;
+    HMONITOR found = nullptr;
+};
+
+BOOL CALLBACK findMonitorByDevice(HMONITOR monitor, HDC, LPRECT, LPARAM param)
+{
+    auto *ctx = reinterpret_cast<FindByDevice *>(param);
+    MONITORINFOEXW mi = {};
+    mi.cbSize = sizeof(mi);
+    if (GetMonitorInfoW(monitor, &mi) && *ctx->device == QString::fromWCharArray(mi.szDevice)) {
+        ctx->found = monitor;
+        return FALSE; // stop
+    }
+    return TRUE;
+}
+
+// nullptr if no live monitor has this szDevice - unplugged, or a name that
+// never matched.
+HMONITOR monitorForDevice(const QString &device)
+{
+    FindByDevice ctx{&device};
+    EnumDisplayMonitors(nullptr, nullptr, findMonitorByDevice, reinterpret_cast<LPARAM>(&ctx));
+    return ctx.found;
 }
 
 // Forwards ABN_POSCHANGED (another appbar, or the resolution, moved) to the
@@ -61,6 +92,10 @@ PanelWindow::PanelWindow(QWindow *parent)
             removeAppBar();
     });
     connect(this, &QWindow::screenChanged, this, [this](QScreen *) { updateAppBar(); });
+    // A monitor that appears after this panel was built - screenName named
+    // one that was not plugged in yet - gets picked up without waiting for
+    // some other, unrelated geometry change to trigger a re-negotiation.
+    connect(qGuiApp, &QGuiApplication::screenAdded, this, [this](QScreen *) { updateAppBar(); });
 }
 
 PanelWindow::~PanelWindow()
@@ -94,13 +129,58 @@ void PanelWindow::setThickness(int thickness)
     updateAppBar();
 }
 
+void PanelWindow::setScreenName(const QString &screenName)
+{
+    if (m_screenName == screenName)
+        return;
+    m_screenName = screenName;
+    emit screenNameChanged();
+    updateAppBar();
+}
+
+void PanelWindow::setDevice(const QString &device)
+{
+    if (m_device == device)
+        return;
+    m_device = device;
+    emit deviceChanged();
+}
+
+void PanelWindow::componentComplete()
+{
+    m_complete = true;
+    updateAppBar();
+}
+
 void PanelWindow::updateAppBar()
 {
+    if (!m_complete)
+        return;
     if (!isVisible())
         return;
     const HWND hwnd = reinterpret_cast<HWND>(winId());
     if (!hwnd)
         return;
+
+    // The AppBar API negotiates in physical pixels; Qt geometry is logical.
+    // Everything below stays physical.
+    HMONITOR monitor;
+    if (m_screenName.isEmpty()) {
+        monitor = MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    } else {
+        monitor = monitorForDevice(m_screenName);
+        if (!monitor) {
+            // Unplugged, or the panel is about to be torn down - never stack
+            // a second bar on the primary by falling back to it.
+            removeAppBar();
+            return;
+        }
+    }
+
+    MONITORINFOEXW mi = {};
+    mi.cbSize = sizeof(mi);
+    GetMonitorInfoW(monitor, &mi);
+    setDevice(QString::fromWCharArray(mi.szDevice));
 
     ensureEventFilter();
 
@@ -123,13 +203,18 @@ void PanelWindow::updateAppBar()
         m_registered = true;
     }
 
-    // The AppBar API negotiates in physical pixels; Qt geometry is logical.
-    // Everything below stays physical.
-    MONITORINFO mi = {};
-    mi.cbSize = sizeof(mi);
-    GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi);
     const RECT mon = mi.rcMonitor;
-    const int px = qRound(m_thickness * devicePixelRatio());
+    // On the first pass after screenName picks a monitor this window has not
+    // moved to yet, this window's own devicePixelRatio() still describes the
+    // one it is LEAVING - go through the target monitor's own QScreen
+    // instead. screenName empty keeps today's behaviour: the window already
+    // lives on the monitor it is docking to.
+    qreal dpr = devicePixelRatio();
+    if (!m_screenName.isEmpty()) {
+        if (QScreen *target = screendevice::find(m_screenName))
+            dpr = target->devicePixelRatio();
+    }
+    const int px = qRound(m_thickness * dpr);
 
     UINT nativeEdge = ABE_TOP;
     RECT rc = mon;

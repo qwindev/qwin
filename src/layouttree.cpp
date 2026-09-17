@@ -108,8 +108,40 @@ Insert Tree::insert(quintptr id, quintptr nearId, const Metrics &metrics)
     // Decided before anything is mutated, so a rejection leaves the tree
     // exactly as it was and the caller can float the window instead.
     SplitKind kind;
-    if (!chooseSplit(target->box, metrics, &kind))
-        return Insert::TooSmall;
+    if (!chooseSplit(target->box, metrics, &kind)) {
+        // The preferred leaf has no room left. Rather than give up on the
+        // whole insert, try every other leaf and take the one with the most
+        // room - a batch adoption (nearId == 0, enabling the tiler or a
+        // virtual-desktop switch with several windows already open) always
+        // targets m_lastInserted, so without this the first window's leaf
+        // keeps halving itself into slivers while its neighbours sit at
+        // twice its size. m_index is a QHash, so its order is random per
+        // process; largest area first, ties broken by top edge then left
+        // edge, is what makes the pick reproducible.
+        Node *best = nullptr;
+        SplitKind bestKind = SplitKind::Columns;
+        qint64 bestArea = -1;
+        for (auto it = m_index.constBegin(); it != m_index.constEnd(); ++it) {
+            Node *leaf = it.value();
+            SplitKind candidateKind;
+            if (!chooseSplit(leaf->box, metrics, &candidateKind))
+                continue;
+            const qint64 area = qint64(leaf->box.width()) * leaf->box.height();
+            const bool better = !best || area > bestArea
+                              || (area == bestArea && leaf->box.top() < best->box.top())
+                              || (area == bestArea && leaf->box.top() == best->box.top()
+                                  && leaf->box.left() < best->box.left());
+            if (better) {
+                best = leaf;
+                bestKind = candidateKind;
+                bestArea = area;
+            }
+        }
+        if (!best)
+            return Insert::TooSmall;
+        target = best;
+        kind = bestKind;
+    }
 
     // The target leaf becomes the split in place, so no parent pointer
     // anywhere else has to be rewritten.

@@ -5,6 +5,8 @@
 #include <QDebug>
 #include <QFileInfo>
 #include <QGuiApplication>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QScreen>
 
 #include <windows.h>
@@ -12,6 +14,7 @@
 
 #include <string>
 
+#include "screendevice.h"
 #include "tilingapi_p.h"
 
 using namespace tiling;
@@ -120,15 +123,13 @@ BOOL CALLBACK collectWindow(HWND hwnd, LPARAM param)
     return TRUE;
 }
 
-// QScreen::name() is the GDI device name on Windows, so it matches the keys
-// workAreas() returns. Going through Qt keeps this unit off
-// shcore/GetDpiForMonitor.
+// QScreen::name() is a friendly name, not the GDI device workAreas() keys by
+// (see screendevice.h) - screendevice::find() is what maps device -> QScreen.
+// Going through Qt for the DPR keeps this unit off shcore/GetDpiForMonitor.
 qreal scaleForDevice(const QString &device)
 {
-    for (QScreen *screen : QGuiApplication::screens()) {
-        if (screen->name() == device)
-            return screen->devicePixelRatio();
-    }
+    if (QScreen *screen = screendevice::find(device))
+        return screen->devicePixelRatio();
     QScreen *primary = QGuiApplication::primaryScreen();
     return primary ? primary->devicePixelRatio() : 1.0;
 }
@@ -208,6 +209,33 @@ bool parseResize(const QString &text, layout::SplitKind *axis, int *sign)
     qWarning() << "Tiler: unknown resize" << text
                << "- use wider/narrower/taller/shorter";
     return false;
+}
+
+// True iff `hwnd` occupies its whole monitor on its own initiative - a
+// browser or video player going HTML5/F11 fullscreen strips
+// WS_CAPTION/WS_THICKFRAME from the SAME hwnd and SetWindowPos-es it to the
+// monitor's full rect. IsZoomed is excluded up front: an ordinary maximize
+// is still treated as drift and restored, as today. Compared against
+// rcMonitor, not rcWork - a borderless window maximized to the work area
+// (no bar, auto-hidden taskbar) covers only the work area and is not
+// fullscreen. Containment on raw RECT edges, not QRect::right()/bottom()
+// (off by one): no slack, since browsers hit the monitor rect exactly, and
+// a rect larger than the monitor also counts.
+bool coversMonitor(HWND hwnd, QRect *monitor = nullptr)
+{
+    if (IsZoomed(hwnd))
+        return false;
+    RECT wr;
+    if (!GetWindowRect(hwnd, &wr))
+        return false;
+    MONITORINFO mi = {};
+    mi.cbSize = sizeof(mi);
+    if (!GetMonitorInfoW(MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), &mi))
+        return false;
+    if (monitor)
+        *monitor = toRect(mi.rcMonitor);
+    const RECT &rm = mi.rcMonitor;
+    return wr.left <= rm.left && wr.top <= rm.top && wr.right >= rm.right && wr.bottom >= rm.bottom;
 }
 
 } // namespace
@@ -348,7 +376,8 @@ void TilingApi::setEnabled(bool enabled)
     m_enabled = enabled;
     qInfo() << "Tiler: enabled ->" << enabled;
     if (m_enabled) {
-        if (!m_pendingRecovered.isEmpty()) {
+        const bool claimedRecovered = !m_pendingRecovered.isEmpty();
+        if (claimedRecovered) {
             // The recovered data is already correct; claiming only cancels
             // the safety net that would otherwise undo it.
             m_pendingTimer.stop();
@@ -363,6 +392,14 @@ void TilingApi::setEnabled(bool enabled)
         }
         m_sweepTimer.start();
         rescan();
+        // Recovered members are already in m_windows, so rescan()'s discovery
+        // pass adopts nothing new and `changed` stays false - retile() would
+        // never run, and their `assigned` rect (invalid, never having been
+        // placed this session) makes the sweep's drift-fixer skip them too.
+        // Without this they would sit wherever they were before the crash
+        // until something unrelated happens to trigger a retile.
+        if (claimedRecovered)
+            retile();
     } else {
         m_sweepTimer.stop();
         m_scanTimer.stop();
@@ -635,9 +672,34 @@ void TilingApi::onWindowShown(void *hwnd)
 
 void TilingApi::onForegroundChanged(void *hwnd)
 {
-    const QString device = deviceForWindow(hwnd);
-    if (!device.isEmpty())
+    // Which monitor gets the next chord follows the foreground window, in
+    // three cases - see m_shellFocusDevice for why the desktop-like one
+    // exists at all.
+    QString device;
+    if (isDesktopWindow(static_cast<HWND>(hwnd))) {
+        // The hint focusWorkspaceMember() left, if this is the event it was
+        // left for; otherwise a click on the empty desktop, and the cursor
+        // names the monitor that was clicked. One-shot either way.
+        if (!m_shellFocusDevice.isEmpty() && workAreas().contains(m_shellFocusDevice))
+            device = m_shellFocusDevice;
+        else
+            device = deviceUnderCursor();
+        m_shellFocusDevice.clear();
+    } else if (m_windows.contains(toId(hwnd)) || windowfocus::isFocusableAppWindow(hwnd)) {
+        // A real application window taking focus is unambiguous: trust it,
+        // and forget whatever workspace switch last set m_shellFocusDevice.
+        device = deviceForWindow(hwnd);
+        m_shellFocusDevice.clear();
+    }
+    // Anything else - taskbar, flyouts, tool windows - carries no useful
+    // "which monitor" signal of its own, so m_focusedDevice is left as it
+    // was rather than being pulled onto whatever monitor that popup opened
+    // on.
+
+    if (!device.isEmpty() && device != m_focusedDevice) {
         m_focusedDevice = device;
+        notifyWorkspacesIfChanged();
+    }
 
     const auto it = m_windows.find(toId(hwnd));
     if (it == m_windows.end())
@@ -1095,8 +1157,17 @@ void TilingApi::rescan()
     // the next window to open splits whatever was focused two windows ago
     // rather than the one actually on screen.
     if (HWND fg = GetForegroundWindow()) {
-        if (const auto it = m_windows.constFind(toId(fg)); it != m_windows.constEnd())
+        if (const auto it = m_windows.constFind(toId(fg)); it != m_windows.constEnd()) {
             m_lastFocusedIn[keyOf(it.value())] = toId(fg);
+            // Same catch-up for m_focusedDevice: a window that took focus
+            // before it had a title was still unmanaged when FOREGROUND
+            // fired, so onForegroundChanged()'s rules never matched it.
+            if (it->device != m_focusedDevice) {
+                m_focusedDevice = it->device;
+                m_shellFocusDevice.clear();
+                notifyWorkspacesIfChanged();
+            }
+        }
     }
 
     pruneEmptyTrees();
@@ -1109,6 +1180,7 @@ void TilingApi::rescan()
         // reads inside one rescan always agree.
         m_lastVisibleCount = visible;
         emit layoutChanged();
+        notifyWorkspacesIfChanged(); // `tiles` lives in the monitors map too
     }
 }
 
@@ -1120,9 +1192,12 @@ void TilingApi::sweep()
     rescan(); // adopts windows whose title arrived after their SHOW event
 
     // Re-assert geometry on anything that drifted: an app moving itself, a
-    // Snap gesture, a maximize. This is what "keep the grid" means in
-    // practice - nothing else notices those. Hidden windows are skipped: a
-    // minimized one's iconic rect would read as a permanent drift.
+    // Snap gesture, a maximize - unless it drifted by going fullscreen on its
+    // own (HTML5 video, F11), which keeps its tree seat untouched until it
+    // shrinks back. Nothing else notices a self-move, so this is what "keep
+    // the grid" means in practice for everything short of that one
+    // exception. Hidden windows are skipped: a minimized one's iconic rect
+    // would read as a permanent drift.
     QVector<layout::Placement> fixes;
     QVector<quintptr> giveUp;
     for (auto it = m_windows.begin(); it != m_windows.end(); ++it) {
@@ -1133,6 +1208,8 @@ void TilingApi::sweep()
         // the window back onto its old tile every sweep.
         if (!isTiledEntry(it.value()))
             continue;
+        if (refreshFullscreen(it.key(), it.value()))
+            continue; // fullscreen: left alone, no rejection counted
         if (!it->assigned.isValid())
             continue; // adopted but never placed yet
         RECT r;
@@ -1192,16 +1269,59 @@ void TilingApi::sweep()
 
 // ------------------------------------------------------------------- layout
 
+bool TilingApi::refreshFullscreen(quintptr id, Managed &m)
+{
+    QRect monitorRect;
+    const bool covers = coversMonitor(toHwnd(id), &monitorRect);
+    if (!covers) {
+        if (m.fullscreen) {
+            m.fullscreen = false;
+            qInfo().noquote() << QStringLiteral("Tiler: %1 left fullscreen").arg(describe(id));
+        }
+        return m.fullscreen;
+    }
+    if (!m.fullscreen) {
+        // Only set the flag if the window got there on its own. With zero
+        // gaps, no bar and an auto-hidden taskbar, a lone tile's own rect
+        // already equals the monitor rect; a bare "covers the monitor" test
+        // would exempt that window forever, and it would never shrink back
+        // when a second window opens. `assigned` containing monitorRect
+        // means the tiler itself put it there.
+        const bool ownDoing = !m.assigned.isValid()
+            || m.assigned.x() > monitorRect.x() || m.assigned.y() > monitorRect.y()
+            || m.assigned.x() + m.assigned.width() < monitorRect.x() + monitorRect.width()
+            || m.assigned.y() + m.assigned.height() < monitorRect.y() + monitorRect.height();
+        if (ownDoing) {
+            m.fullscreen = true;
+            qInfo().noquote()
+                << QStringLiteral("Tiler: %1 went fullscreen - leaving it alone").arg(describe(id));
+        }
+    }
+    return m.fullscreen;
+}
+
 void TilingApi::applyPlacements(const QVector<layout::Placement> &places)
 {
     // A hidden member must not be moved: its rect lands on the retile that
-    // follows the show instead.
+    // follows the show instead. A fullscreen tiled member is skipped too,
+    // but `assigned` is still updated for it: `assigned` means "where it
+    // belongs when it comes back" - if the layout changed while this window
+    // was fullscreen, the app restores its OLD bounds on exit, and the
+    // drift-fixer needs the NEW rect on record to move it to the current
+    // layout within one sweep. Deliberate exception to "assigned only for
+    // placements that succeeded", below.
     QVector<layout::Placement> filtered;
     filtered.reserve(places.size());
     for (const layout::Placement &p : places) {
-        const auto it = m_windows.constFind(p.id);
-        if (it != m_windows.constEnd() && it->hidden != hider::Method::None)
-            continue;
+        auto it = m_windows.find(p.id);
+        if (it != m_windows.end()) {
+            if (it->hidden != hider::Method::None)
+                continue;
+            if (isTiledEntry(it.value()) && refreshFullscreen(p.id, it.value())) {
+                it->assigned = p.rect;
+                continue;
+            }
+        }
         filtered.append(p);
     }
     if (filtered.isEmpty())
@@ -1232,23 +1352,71 @@ void TilingApi::applyPlacements(const QVector<layout::Placement> &places)
     }
 
     // One batch, so a re-tile lands in a single frame instead of cascading
-    // window by window.
+    // window by window. A failed DeferWindowPos discards the whole batch,
+    // and EndDeferWindowPos can itself refuse it - either way the fallback
+    // is to place EVERY window of the batch individually, not just the ones
+    // not yet deferred: crediting `assigned` to a window whose DeferWindowPos
+    // call merely queued without the batch ever committing would have
+    // sweep() see it as drifted and re-batch it with the same poison window
+    // next pass.
     HDWP batch = BeginDeferWindowPos(int(filtered.size()));
+    bool batchOk = batch != nullptr;
     for (const layout::Placement &p : filtered) {
-        HWND hwnd = toHwnd(p.id);
-        if (batch)
-            batch = DeferWindowPos(batch, hwnd, nullptr, p.rect.x(), p.rect.y(),
-                                    p.rect.width(), p.rect.height(), kPlaceFlags);
-        // A failed DeferWindowPos discards the whole batch, so from here on
-        // the rest go one at a time; the sweep re-places whatever was lost.
-        if (!batch)
-            SetWindowPos(hwnd, nullptr, p.rect.x(), p.rect.y(),
-                          p.rect.width(), p.rect.height(), kPlaceFlags);
-        if (auto it = m_windows.find(p.id); it != m_windows.end())
-            it->assigned = p.rect;
+        if (!batchOk)
+            break;
+        batch = DeferWindowPos(batch, toHwnd(p.id), nullptr, p.rect.x(), p.rect.y(),
+                                p.rect.width(), p.rect.height(), kPlaceFlags);
+        batchOk = batch != nullptr;
     }
-    if (batch)
-        EndDeferWindowPos(batch);
+    if (batchOk)
+        batchOk = EndDeferWindowPos(batch) != FALSE;
+
+    if (batchOk) {
+        for (const layout::Placement &p : filtered) {
+            if (auto it = m_windows.find(p.id); it != m_windows.end())
+                it->assigned = p.rect;
+        }
+    } else {
+        // Batch died - one window refused to move (elevated process, or an
+        // HWND that died mid-pass) and took its batch-mates down with it.
+        // Placed one at a time instead, so only the windows that actually
+        // move get `assigned`, and the one that does not gets floated
+        // rather than dragging its neighbours through the same failure
+        // every sweep.
+        bool anyFloated = false;
+        for (const layout::Placement &p : filtered) {
+            HWND hwnd = toHwnd(p.id);
+            if (!IsWindow(hwnd))
+                continue; // gone; rescan() releases it
+            const bool ok = SetWindowPos(hwnd, nullptr, p.rect.x(), p.rect.y(),
+                                          p.rect.width(), p.rect.height(), kPlaceFlags);
+            auto it = m_windows.find(p.id);
+            if (ok) {
+                if (it != m_windows.end())
+                    it->assigned = p.rect;
+                continue;
+            }
+            if (it == m_windows.end())
+                continue;
+            if (layout::Tree *tree = m_trees.value(keyOf(it.value())))
+                tree->remove(p.id);
+            it->floating = true;
+            it->overflow = false;
+            it->rejections = 0;
+            m_stickyFloat.insert(p.id);
+            qInfo() << "Tiler: floating" << processNameFor(hwnd)
+                    << "- it cannot be moved (elevated?)";
+            anyFloated = true;
+        }
+        if (anyFloated) {
+            pruneEmptyTrees();
+            // Not a direct retile() call: this runs inside applyPlacements(),
+            // which retile() itself calls, so recursing here would re-enter
+            // it mid-pass. Queued instead, so the hole this leaves closes on
+            // the next spin of the event loop.
+            QMetaObject::invokeMethod(this, &TilingApi::retile, Qt::QueuedConnection);
+        }
+    }
 
     m_applying = false;
 }
@@ -1296,22 +1464,18 @@ void TilingApi::retile()
 }
 
 // Gated rather than emitted straight from retile(), because the property is a
-// QVariantList: every emission rebuilds the bar's Repeater delegates, and
+// QVariantMap: every emission rebuilds a bar's Repeater delegates, and
 // retile() runs for every drift fix. Same idea as m_lastVisibleCount for
-// layoutChanged.
+// layoutChanged. The signature covers every monitor, not just the focused
+// one - a per-monitor bar has to be told about a change on any of them, and
+// deriving it from `monitors` (a compact JSON dump is the cheapest stable
+// text form of a QVariantMap) is what makes that automatic instead of having
+// to enumerate what changed by hand.
 void TilingApi::notifyWorkspacesIfChanged()
 {
-    const QString device = focusedDevice();
-    QString signature = device + QLatin1Char('#')
-                      + QString::number(m_active.value(device, 0)) + QLatin1Char('#')
-                      + QString::number(m_workspaceCount) + QLatin1Char('#');
-    QVector<int> counts(m_workspaceCount, 0);
-    for (auto it = m_windows.constBegin(); it != m_windows.constEnd(); ++it) {
-        if (it->device == device && it->workspace >= 0 && it->workspace < m_workspaceCount)
-            ++counts[it->workspace];
-    }
-    for (int c : std::as_const(counts))
-        signature += QString::number(c) + QLatin1Char(',');
+    const QString signature = QString::number(m_workspaceCount) + QLatin1Char('#')
+        + QString::fromUtf8(QJsonDocument(QJsonObject::fromVariantMap(monitors()))
+                                 .toJson(QJsonDocument::Compact));
 
     if (signature == m_workspacesSignature)
         return;
@@ -1342,7 +1506,9 @@ void TilingApi::releaseWindow(quintptr id, bool restoreGeometry)
                      SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
 
-    if (restoreGeometry && entry.original.isValid()) {
+    // Disabling the tiler mid-video must not shrink a fullscreen window back
+    // to the geometry it had at adoption.
+    if (restoreGeometry && entry.original.isValid() && !coversMonitor(toHwnd(id))) {
         m_applying = true;
         SetWindowPos(toHwnd(id), nullptr, entry.original.x(), entry.original.y(),
                       entry.original.width(), entry.original.height(), kPlaceFlags);
@@ -1452,13 +1618,18 @@ void TilingApi::focusDirection(const QString &direction)
         return;
     quintptr id = 0;
     layout::Tree *tree = treeForFocused(&id);
-    if (!tree)
-        return;
-    if (const quintptr target = tree->neighbour(id, dir)) {
+    const quintptr target = tree ? tree->neighbour(id, dir) : 0;
+    if (target) {
         // Allowed because these commands come from a Hotkey: WM_HOTKEY grants
         // the process foreground rights for the duration.
         SetForegroundWindow(toHwnd(target));
+        return;
     }
+    // The foreground window is not a tiled member of ours, or it already
+    // sits at the edge of its monitor's tree that way - either way there is
+    // nothing left to do on this monitor, so carry on to the next one, the
+    // way Hyprland's movefocus does at a monitor edge.
+    focusMonitor(direction);
 }
 
 void TilingApi::moveDirection(const QString &direction)
@@ -1468,13 +1639,161 @@ void TilingApi::moveDirection(const QString &direction)
         return;
     quintptr id = 0;
     layout::Tree *tree = treeForFocused(&id);
-    if (!tree)
+    const quintptr target = tree ? tree->neighbour(id, dir) : 0;
+    if (target) {
+        // Focus needs no help: swapping exchanges the leaves' occupants, so
+        // the window the user was in is still the foreground one.
+        if (tree->swap(id, target))
+            retile();
         return;
-    const quintptr target = tree->neighbour(id, dir);
-    // Focus needs no help: swapping exchanges the leaves' occupants, so the
-    // window the user was in is still the foreground one.
-    if (target && tree->swap(id, target))
-        retile();
+    }
+    moveToMonitor(direction);
+}
+
+// The monitor beside focusedDevice() in `direction`. Same onSide/inLane/
+// distance shape as Tree::neighbour(), one level up: monitors, not leaves.
+QString TilingApi::adjacentDevice(const QString &direction) const
+{
+    layout::Direction dir;
+    if (!parseDirection(direction, &dir))
+        return QString();
+
+    const QHash<QString, QRect> areas = workAreas();
+    const auto fromIt = areas.constFind(focusedDevice());
+    if (fromIt == areas.constEnd())
+        return QString();
+    const QRect me = fromIt.value();
+    const QPoint c = me.center();
+
+    // "That way" means wholly past this monitor's edge, not merely a centre
+    // further along: two side-by-side monitors of different heights have
+    // centres at different y, and "down" from the shorter one must not jump
+    // sideways. Perpendicular overlap is then a preference, not a filter, so
+    // monitors stacked diagonally still reach each other.
+    QString bestOverlap, bestAny;
+    int bestOverlapDistance = 0, bestAnyDistance = 0;
+    for (auto it = areas.constBegin(); it != areas.constEnd(); ++it) {
+        if (it.key() == fromIt.key())
+            continue;
+        const QRect &r = it.value();
+        const QPoint o = r.center();
+
+        bool onSide = false, inLane = false;
+        int distance = 0;
+        switch (dir) {
+        case layout::Direction::Left:
+            onSide = r.right() < me.left();
+            inLane = r.top() < me.bottom() && me.top() < r.bottom();
+            distance = c.x() - o.x();
+            break;
+        case layout::Direction::Right:
+            onSide = r.left() > me.right();
+            inLane = r.top() < me.bottom() && me.top() < r.bottom();
+            distance = o.x() - c.x();
+            break;
+        case layout::Direction::Up:
+            onSide = r.bottom() < me.top();
+            inLane = r.left() < me.right() && me.left() < r.right();
+            distance = c.y() - o.y();
+            break;
+        case layout::Direction::Down:
+            onSide = r.top() > me.bottom();
+            inLane = r.left() < me.right() && me.left() < r.right();
+            distance = o.y() - c.y();
+            break;
+        }
+        if (!onSide)
+            continue;
+        if (bestAny.isEmpty() || distance < bestAnyDistance) {
+            bestAny = it.key();
+            bestAnyDistance = distance;
+        }
+        if (inLane && (bestOverlap.isEmpty() || distance < bestOverlapDistance)) {
+            bestOverlap = it.key();
+            bestOverlapDistance = distance;
+        }
+    }
+    return !bestOverlap.isEmpty() ? bestOverlap : bestAny;
+}
+
+void TilingApi::focusMonitor(const QString &direction)
+{
+    if (!m_enabled)
+        return;
+    const QString target = adjacentDevice(direction);
+    if (target.isEmpty())
+        return;
+
+    // Allowed for the same reason as in focusDirection(): WM_HOTKEY. Lands on
+    // the last-focused or topmost member, or the shell when the monitor is
+    // empty - and makes `target` the focused device either way.
+    focusWorkspaceMember(target, m_active.value(target, 0));
+    notifyWorkspacesIfChanged();
+}
+
+void TilingApi::moveToMonitor(const QString &direction)
+{
+    if (!m_enabled)
+        return;
+    // First, as in moveToWorkspace() - and before picking the target: it is
+    // what brings m_focusedDevice, which "adjacent" is measured from, up to
+    // date with the foreground window.
+    rescan();
+    const QString target = adjacentDevice(direction);
+    if (target.isEmpty())
+        return;
+
+    HWND fg = GetForegroundWindow();
+    if (!fg)
+        return;
+    const quintptr id = toId(fg);
+    const auto before = m_windows.constFind(id);
+    if (before == m_windows.constEnd())
+        return; // not ours to move
+
+    const QString source = before->device;
+    RECT rectBefore = {};
+    const bool hadRect = GetWindowRect(fg, &rectBefore);
+
+    // Updates m_focusedDevice for the foreground window itself.
+    migrateWindow(id, target, m_active.value(target, 0));
+
+    const auto after = m_windows.constFind(id);
+    if (after != m_windows.constEnd() && !isTiledEntry(after.value()) && hadRect) {
+        // Not tiled at the new spot - floating, pinned, or it came back
+        // overflow - so migrateWindow()'s bookkeeping-only move left its
+        // geometry sitting over the OLD monitor; without repositioning it
+        // here the next sweep reads that as "on the wrong monitor" and
+        // migrates it straight back.
+        const QHash<QString, QRect> areas = workAreas();
+        const auto sourceArea = areas.constFind(source);
+        const auto targetArea = areas.constFind(target);
+        if (sourceArea != areas.constEnd() && targetArea != areas.constEnd()
+            && sourceArea->width() > 0 && sourceArea->height() > 0) {
+            const QRect from = toRect(rectBefore);
+            const QRect &oldArea = sourceArea.value();
+            const QRect &newArea = targetArea.value();
+            // Same relative offset inside the new work area, same size,
+            // clamped to fit a monitor that may be smaller.
+            const qreal fx = qreal(from.x() - oldArea.x()) / oldArea.width();
+            const qreal fy = qreal(from.y() - oldArea.y()) / oldArea.height();
+            const int w = qMin(from.width(), newArea.width());
+            const int h = qMin(from.height(), newArea.height());
+            int x = newArea.x() + qRound(fx * newArea.width());
+            int y = newArea.y() + qRound(fy * newArea.height());
+            x = qBound(newArea.x(), x, newArea.x() + newArea.width() - w);
+            y = qBound(newArea.y(), y, newArea.y() + newArea.height() - h);
+
+            m_applying = true;
+            SetWindowPos(fg, nullptr, x, y, w, h, kPlaceFlags);
+            m_applying = false;
+        }
+    }
+
+    pruneEmptyTrees();
+    retile();
+    saveStateNow();
+    notifyWorkspacesIfChanged();
 }
 
 void TilingApi::resize(const QString &how)

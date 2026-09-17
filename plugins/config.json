@@ -6,10 +6,16 @@
     },
 
     "bar": {
-        "left": ["start", "workspaces", "tiling-indicator", "window-title"],
-        "center": ["clock"],
-        "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
-                  "battery", "power"]
+        "primary": {
+            "left": ["start", "workspaces", "tiling-indicator", "window-title"],
+            "center": ["clock"],
+            "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
+                      "battery", "power"]
+        },
+        "secondary": {
+            "left": ["workspaces", "tiling-indicator", "window-title"],
+            "center": ["clock"]
+        }
     },
 
     "tiling": {

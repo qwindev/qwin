@@ -34,6 +34,7 @@ qt_add_executable(qwin
     src/audioapi.cpp src/audioapi.h
     src/foregroundwindow.cpp src/foregroundwindow.h
     src/layouttree.cpp src/layouttree.h
+    src/screendevice.h
     src/tilingapi.cpp src/tilingapi.h
     src/tilingapi_workspaces.cpp src/tilingapi_recovery.cpp src/tilingapi_p.h
     src/tilingstate.cpp src/tilingstate.h

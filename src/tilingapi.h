@@ -47,6 +47,13 @@ class QScreen;
 //     ones with a sizing border that still refuse, which would otherwise
 //     flicker every sweep.
 //
+// Fullscreen is the one self-move the grid does not fight: a window that
+// takes over its whole monitor on its own (HTML5 video, F11) is left exactly
+// where it put itself - Managed::fullscreen, refreshed by refreshFullscreen()
+// from both the sweep's drift-fixer and applyPlacements() - keeps its tree
+// seat the whole time, so it drops straight back into the layout the moment
+// it shrinks again.
+//
 // Member definitions are split by concern: tilingapi.cpp (lifecycle, most
 // properties, discovery, layout, the window commands),
 // tilingapi_workspaces.cpp (workspace properties and commands, pinning,
@@ -86,6 +93,19 @@ class TilingApi : public QObject
     // count on that (device, workspace) - tiled, floating and pinned alike,
     // hidden or not.
     Q_PROPERTY(QVariantList workspaces READ workspaces NOTIFY workspacesChanged)
+    // One entry per LIVE monitor (keyed by workAreas() device name, so an
+    // empty monitor still appears), each value {active, focused, tiles,
+    // workspaces}: `active` that monitor's active workspace index, `focused`
+    // whether it is the one focusedDevice() names, `tiles` its per-device
+    // managedCount(), `workspaces` exactly the shape the `workspaces`
+    // property above returns for that device. A bound Q_INVOKABLE captures
+    // no dependency and never re-evaluates, which a per-monitor bar needs -
+    // hence a notifying property instead of, say, a monitorsFor(device) call.
+    Q_PROPERTY(QVariantMap monitors READ monitors NOTIFY workspacesChanged)
+    // The monitor `switchToWorkspace()` and the workspace properties act on:
+    // the foreground window's monitor when `m_focusedDevice` still names a
+    // real one, else the monitor under the cursor, else the primary screen.
+    Q_PROPERTY(QString focusedDevice READ focusedDevice NOTIFY workspacesChanged)
 public:
     explicit TilingApi(QObject *parent = nullptr);
     ~TilingApi() override;
@@ -136,10 +156,26 @@ public:
     void setPinnedTopmost(bool pinned);
     int currentWorkspace() const;
     QVariantList workspaces() const;
+    QVariantMap monitors() const;
+    QString focusedDevice() const; // see the Q_PROPERTY above for what this picks
 
-    // "left" | "right" | "up" | "down", case-insensitive.
+    // "left" | "right" | "up" | "down", case-insensitive. Falls through to
+    // focusMonitor() when the foreground window is not a tiled member of
+    // ours, or `neighbour()` finds nothing that way - the edge of its
+    // monitor's tree, not just the edge of the screen.
     Q_INVOKABLE void focusDirection(const QString &direction);
+    // Same direction syntax; falls through to moveToMonitor() at the same
+    // edge focusDirection() does.
     Q_INVOKABLE void moveDirection(const QString &direction);
+    // Crosses onto the adjacent monitor in `direction` and focuses its
+    // last-focused or topmost member (or the shell, if it has none). No-op
+    // if there is no monitor that way.
+    Q_INVOKABLE void focusMonitor(const QString &direction);
+    // Moves the foreground window - if it is one we manage - onto the
+    // adjacent monitor in `direction`: tiled there if there is room, placed
+    // at the same relative offset and size (clamped to fit) if not. No-op if
+    // there is no monitor that way, or the foreground window is not ours.
+    Q_INVOKABLE void moveToMonitor(const QString &direction);
     // "wider" | "narrower" | "taller" | "shorter", case-insensitive: moves
     // the divider nearest the focused window by `resizeStep`.
     Q_INVOKABLE void resize(const QString &how);
@@ -157,6 +193,10 @@ public:
     Q_INVOKABLE void retile();
     // Switches the focused monitor (see focusedDevice()) to `index`.
     Q_INVOKABLE void switchToWorkspace(int index);
+    // Same as switchToWorkspace(), but on `device` instead of focusedDevice()
+    // - for a workspace button clicked on a non-focused monitor's bar. No-op
+    // if `device` names no live monitor.
+    Q_INVOKABLE void switchToWorkspaceOn(const QString &device, int index);
     // Moves the foreground window to `index` on its own monitor; `follow`
     // also switches that monitor to it.
     Q_INVOKABLE void moveToWorkspace(int index, bool follow = false);
@@ -206,6 +246,10 @@ private:
         bool floating = false;   // user toggle, no sizing border, refused its rect
         bool overflow = false;   // floated only for lack of room; retried every rescan
         bool pinned = false;     // floating, never hidden, follows the active workspace
+        // Took over its whole monitor on its own (browser/video fullscreen,
+        // F11): keeps its tree seat, is neither placed nor drift-fixed while
+        // set. Live-derived every sweep/applyPlacements - never persisted.
+        bool fullscreen = false;
         hider::Method hidden = hider::Method::None; // how WE hid it; None = on screen
         int hideFailures = 0;    // cloak refusals; 3 -> this window uses Minimize
         bool showFailed = false; // warned once; see showWindow()
@@ -250,10 +294,18 @@ private:
     bool metricsForKey(const QString &key, layout::Metrics *out) const;
 
     QString deviceForWindow(void *hwnd) const;
-    // The monitor `switchToWorkspace()` and the workspace properties act on:
-    // the foreground window's monitor when `m_focusedDevice` still names a
-    // real one, else the monitor under the cursor, else the primary screen.
-    QString focusedDevice() const;
+    // Shared builder behind `workspaces` and each entry of `monitors`:
+    // [{index, active, windows}] for one device.
+    QVariantList workspacesFor(const QString &device) const;
+    // The per-device version of managedCount(): tiled, not-hidden members on
+    // this monitor only. Behind `monitors`' "tiles".
+    int tilesOnDevice(const QString &device) const;
+    // The monitor beside focusedDevice() in `direction` (workAreas() rects):
+    // candidates are the monitors wholly past this one's edge that way,
+    // preferring ones whose extent on the perpendicular axis overlaps the
+    // current monitor's, nearest along the axis either way. Empty if none.
+    // Shared by focusMonitor() and moveToMonitor().
+    QString adjacentDevice(const QString &direction) const;
 
     QString classNameFor(void *hwnd);
     QString titleFor(void *hwnd);
@@ -264,6 +316,12 @@ private:
 
     void applyPlacements(const QVector<layout::Placement> &places);
     void releaseWindow(quintptr id, bool restoreGeometry);
+    // Refreshes and returns m.fullscreen: whether `id`'s window now covers
+    // its whole monitor (coversMonitor(), tilingapi.cpp). Logs the
+    // transition each way. Called from both applyPlacements() and sweep()'s
+    // drift loop, which is why it lives on the class rather than in the
+    // anonymous namespace with coversMonitor() itself.
+    bool refreshFullscreen(quintptr id, Managed &m);
     // Moves an already-managed window to (newDevice, newWorkspace): tree
     // remove + insert for a tiled member, plain bookkeeping otherwise.
     // TooSmall at the new spot sets `overflow`.
@@ -289,9 +347,10 @@ private:
     // m_hideMethod, forced to Minimize when cloaking is unavailable or this
     // window has already refused it three times.
     hider::Method effectiveHideMethod(const Managed &m) const;
-    // Emits workspacesChanged() only when the focused monitor's workspace
-    // list would actually read differently; see tilingapi.cpp for why it is
-    // gated.
+    // Emits workspacesChanged() only when `monitors` (every monitor, not just
+    // the focused one - a per-monitor bar needs to hear about a change on
+    // any of them) would actually read differently; see tilingapi.cpp for
+    // why it is gated.
     void notifyWorkspacesIfChanged();
     // Hides `id` and records how. A cloak failure bumps hideFailures and
     // falls back to Minimize for this call. No-op if already hidden.
@@ -371,6 +430,14 @@ private:
     QHash<QString, int> m_active;             // device -> active workspace index
     QHash<QString, quintptr> m_lastFocusedIn; // tree key -> last focused member
     QString m_focusedDevice;
+    // A one-shot hint from focusWorkspaceMember() to the FOREGROUND event it
+    // is about to cause: landing on an EMPTY workspace hands the keyboard to
+    // the shell window, which spans the whole virtual desktop, so
+    // deviceForWindow() on it names whichever monitor it overlaps most - and
+    // the event arrives after the switch has returned, overwriting the
+    // monitor the user is on. Set only while such an event is pending;
+    // consumed by it, or cleared by a real app window taking the foreground.
+    QString m_shellFocusDevice;
     // Last workspace list reported to QML, as a signature; see
     // notifyWorkspacesIfChanged().
     QString m_workspacesSignature;

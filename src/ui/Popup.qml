@@ -25,7 +25,12 @@ Window {
     // nothing to type into (measured under both). Hotkey-driven popups, whose
     // owner is an ordinary window, DO get it back, which is what once made
     // the flag look like a replacement for the focus bracket. It is not.
-    flags: Qt.FramelessWindowHint | Qt.Popup | Qt.WindowStaysOnTopHint
+    //
+    // NoDropShadow: Qt registers every Qt.Popup with the CS_DROPSHADOW class
+    // style, and that classic shadow follows the window's rectangle, not its
+    // alpha - it showed as square edges past the rounded corners.
+    flags: Qt.FramelessWindowHint | Qt.Popup | Qt.NoDropShadowWindowHint
+           | Qt.WindowStaysOnTopHint
     color: "transparent"
     width: contentWidth
     height: contentHeight

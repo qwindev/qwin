@@ -15,10 +15,16 @@ defines for itself:
     "theme": { "fontFamily": "Cascadia Code" },
 
     "bar": {
-        "left": ["start", "workspaces", "tiling-indicator", "window-title"],
-        "center": ["clock"],
-        "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
-                  "battery", "power"]
+        "primary": {
+            "left": ["start", "workspaces", "tiling-indicator", "window-title"],
+            "center": ["clock"],
+            "right": ["weather", "system-stats", "wifi", "bluetooth", "volume",
+                      "battery", "power"]
+        },
+        "secondary": {
+            "left": ["workspaces", "tiling-indicator", "window-title"],
+            "center": ["clock"]
+        }
     },
 
     "clock": { "format": "ddd dd MMM  hh:mm:ss" },
@@ -31,6 +37,27 @@ Plugins left out of `enabled` (like the bar modules above) can still be
 embedded by other plugins — the bar assembles its slots from the names in
 its section. Without a `config.json` (or without an `enabled` key) every
 installed plugin is enabled, so simply dropping a folder in works.
+
+### One bar per monitor
+
+The bundled `bar` plugin puts a `PanelWindow` on every monitor
+`System.screens` reports (primary first), and the primary and secondary
+monitors' module lists are configured separately under `"bar"`:
+
+- `"primary"` — the primary monitor's `left`/`center`/`right` lists. If
+  `"primary"` is missing, `"left"`/`"center"`/`"right"` are read straight off
+  `"bar"` itself, so a `config.json` written before per-monitor bars existed
+  keeps working unchanged.
+- `"secondary"` — the lists for every other monitor's bar. Missing entirely
+  gets a built-in slim default, `{ "left": ["workspaces",
+  "tiling-indicator", "window-title"] }`; set it to `false` to show no bar at
+  all on non-primary monitors. Missing slots (in either section) are empty
+  lists.
+
+Per-monitor bar modules (`workspaces`, `tiling-indicator`, `window-title`)
+describe the monitor the bar they're embedded in is docked to, not
+necessarily the tiler's focused one — so the workspace row on a second
+monitor's bar shows that monitor's own workspaces.
 
 The file is watched: editing it applies live, and invalid JSON keeps the
 last good config with a log warning. `plugins/config.json` is a complete

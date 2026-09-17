@@ -54,8 +54,9 @@ struct Metrics {
     int minHeight = 0;
 };
 
-// TooSmall: both split axes would have left a tile under the minimum, so
-// nothing was inserted and the tree is untouched. The caller floats it.
+// TooSmall: no leaf in the tree - preferred or otherwise - could take the
+// split on either axis, so nothing was inserted and the tree is untouched.
+// The caller floats it.
 enum class Insert { Placed, TooSmall };
 
 class Tree
@@ -85,9 +86,15 @@ public:
     // trust what the last arrange left behind.
     //
     // If the natural axis would leave a tile under the minimum, the other
-    // axis is tried before giving up - a wide, short tile often splits into
-    // rows perfectly well when columns would not, and rotating the split
-    // beats ejecting the window.
+    // axis is tried before giving up on that leaf - a wide, short tile often
+    // splits into rows perfectly well when columns would not, and rotating
+    // the split beats ejecting the window. If the preferred leaf still can't
+    // take it on either axis, every other leaf is tried instead, largest box
+    // area first (ties broken by top edge then left edge, so the pick is
+    // deterministic despite the index being a QHash): a batch adoption
+    // otherwise keeps splitting the same last-inserted leaf into slivers
+    // while its neighbours still have room. Nothing is mutated until a leaf
+    // that fits is found.
     Insert insert(quintptr id, quintptr nearId, const Metrics &metrics);
     bool remove(quintptr id);
 

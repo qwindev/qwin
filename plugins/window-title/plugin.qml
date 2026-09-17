@@ -1,11 +1,19 @@
 import QtQuick
+import QtQuick.Window
 import Qwin
 import Qwin.Ui
 
 // The focused window's title, app icon and optional muted app-name prefix.
 // Hides itself through the usual `shown` whenever nothing focusable owns the
-// keyboard - the desktop, a system flyout, one of our own panels. No
+// keyboard - the desktop, a system flyout, one of our own panels, OR (inside
+// a PanelWindow) when the focused window is not on THIS module's monitor. No
 // MouseArea: a click here would have nothing to do.
+//
+// `Tiler.focusedDevice`, not a monitor lookup on ActiveWindow: the tiler
+// already tracks programmatic moves between monitors (moveToMonitor), which
+// fire no foreground or window-name-change event ActiveWindow could catch.
+// Standalone (device empty, no PanelWindow) shows on any focused window, as
+// before this property existed.
 //
 // config.json section (all keys optional):
 //   "window-title": {
@@ -15,7 +23,8 @@ import Qwin.Ui
 //   }
 Rectangle {
     id: windowTitle
-    property bool shown: ActiveWindow.available
+    readonly property string device: (Window.window && Window.window.device) || ""
+    property bool shown: ActiveWindow.available && (device === "" || Tiler.focusedDevice === device)
     visible: shown
 
     // Read once per load; a config.json edit triggers a full reload anyway.
